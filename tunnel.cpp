@@ -48,7 +48,7 @@ int build_server(void) {
 
 	rc.server_addr.sin_family = AF_INET;
 	rc.server_addr.sin_addr.s_addr = inet_addr(config.ipaddr);
-	rc.server_addr.sin_port = htons(config.leak_lport);
+	rc.server_addr.sin_port = htons(config.lport);
 	rc.server_socket = socket(AF_INET, SOCK_STREAM, 0);
 
 	if (rc.server_socket < 0) {
@@ -118,7 +118,7 @@ void handle_tunnel(void) {
 
 int build_tunnel(void) {
 
-	rc.remote_host = gethostbyname(config.leak_host);
+	rc.remote_host = gethostbyname(config.host);
 
 	if (rc.remote_host == NULL) {
 		perror("build_tunnel: gethostbyname()");
@@ -127,7 +127,7 @@ int build_tunnel(void) {
 
 	memset(&rc.remote_addr, 0, sizeof(rc.remote_addr));
 	rc.remote_addr.sin_family = AF_INET;
-	rc.remote_addr.sin_port = htons(config.leak_rport);
+	rc.remote_addr.sin_port = htons(config.rport);
 	memcpy(&rc.remote_addr.sin_addr.s_addr, rc.remote_host->h_addr, rc.remote_host->h_length);
 	rc.remote_socket = socket(AF_INET, SOCK_STREAM, 0);
 
