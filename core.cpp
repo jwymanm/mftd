@@ -119,8 +119,7 @@ void monLoop() {
 }
 
 void runThreads() {
-  startMonitor();
-  while (1) { monLoop(); };
+  startMonitor(); while (1) { monLoop(); };
 }
 
 void WINAPI ServiceControlHandler(DWORD controlCode) {
@@ -183,7 +182,7 @@ void WINAPI ServiceMain(DWORD /*argc*/, TCHAR* /*argv*/[]) {
     SetServiceStatus(serviceStatusHandle, &serviceStatus);
 
     Sleep(2000); 
-    // do for loop here to cleanup until all threads have been cleaned
+    // TODO: do for loop here to cleanup until all threads have been cleaned
     WSACleanup();
 
     serviceStatus.dwControlsAccepted &= ~(SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN);
@@ -314,6 +313,6 @@ int main(int argc, char* argv[]) {
     } else { runService(); }
     } else if (argc == 1 || lstrcmpi(argv[1], TEXT("-v")) == 0) {
       runThreads();
-    } else printf("This option is not available on Windows95/98/ME\n");
- 
+  } else printf("This option is not available on Windows95/98/ME\n");
+  return 0; 
 }
