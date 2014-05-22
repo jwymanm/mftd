@@ -1,0 +1,6 @@
+*.exe
+*.o
+*.htm
+*.state
+*.url
+log/
