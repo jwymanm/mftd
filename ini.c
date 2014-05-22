@@ -12,12 +12,14 @@ int ini_handler(void* cfg, const char* section, const char* name, const char* va
     pconfig->ipaddr = strdup(value);
   } else if (MATCH("Monitor", "mask")) {
     pconfig->netmask = strdup(value);
+  } else if (MATCH("DNS", "ip")) {
+    pconfig->dnsipaddr = strdup(value);
   } else if (MATCH("Tunnel", "host")) {
-    pconfig->leak_host = strdup(value);
+    pconfig->host = strdup(value);
   } else if (MATCH("Tunnel", "lport")) {
-    pconfig->leak_lport = atoi(value);
+    pconfig->lport = atoi(value);
   } else if (MATCH("Tunnel", "rport")) {
-    pconfig->leak_rport = atoi(value);
+    pconfig->rport = atoi(value);
   } else if (MATCH("Logging", "LogLevel")) {
     pconfig->logging = strdup(value);
   } else {

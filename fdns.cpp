@@ -22,7 +22,7 @@ void *fdns(void *arg) {
   struct sockaddr_in addr, server;
   WSADATA wsaData;
 
-  ip4str = strdup(config.ipaddr);
+  ip4str = strdup(config.dnsipaddr);
   for (int i=0; i < 4; i++) { ip4[i] = atoi(strsep(&ip4str, ".")); }
 
   wsaerr = WSAStartup(MAKEWORD(1, 1), &wsaData);

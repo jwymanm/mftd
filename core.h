@@ -39,9 +39,10 @@ typedef struct {
   const char* ifname;
   const char* ipaddr;
   const char* netmask;
-  const char* leak_host;
-  int leak_rport;
-  int leak_lport;
+  const char* dnsipaddr;
+  const char* host;
+  int rport;
+  int lport;
   const char* logging;
 } configuration;
 
