@@ -3,4 +3,5 @@
 *.htm
 *.state
 *.url
-log/
+bin/*
+tmp/build/*
