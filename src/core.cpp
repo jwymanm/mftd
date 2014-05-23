@@ -277,13 +277,12 @@ int main(int argc, char* argv[]) {
   bool result = GetVersionEx(&osvi);
   TCHAR path[ _MAX_PATH + 1 ];
 
-  // TODO grab options from ini OR command line of service for easier install
   if (GetModuleFileName(0, path, sizeof(path) / sizeof(path[0])) > 0) {
     PathRemoveFileSpec(path);
-    if (ini_parse(strcat(path, "/" SERVICE_NAME ".ini"), ini_handler, &config) < 0) {
-      printf("Can't load configuration file: '" SERVICE_NAME ".ini'"); exit(1);
-      // TODO: do routine to constantly check and refresh on ini file
-      // sleep, reload, sleep, reload
+    // look for config file in same directory as binary or ../CFGDIR
+    if ((ini_parse(strcat(path, "/" NAME ".ini"), ini_handler, &config) < 0) ||
+	(ini_parse(strcat(path, "/../" CFGDIR "/" NAME ".ini"), ini_handler, &config) < 0)) {
+      printf("Can't load configuration file: '" NAME ".ini'"); exit(1);
     }
   }
 

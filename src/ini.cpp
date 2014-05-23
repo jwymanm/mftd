@@ -6,14 +6,14 @@
 
 int ini_handler(void* cfg, const char* section, const char* name, const char* value) {
   configuration* pconfig = (configuration*)cfg;
-  if (MATCH("Monitor", "name")) {
+  if (MATCH("Adapter", "name")) {
     pconfig->ifname = strdup(value);
-  } else if (MATCH("Monitor", "adptrip")) {
+  } else if (MATCH("Adapter", "ip")) {
     pconfig->adptrip = strdup(value);
-  } else if (MATCH("Monitor", "monip")) {
-    pconfig->monip = strdup(value);
-  } else if (MATCH("Monitor", "mask")) {
+  } else if (MATCH("Adapter", "mask")) {
     pconfig->netmask = strdup(value);
+  } else if (MATCH("Monitor", "ip")) {
+    pconfig->monip = strdup(value);
   } else if (MATCH("DNS", "ip")) {
     pconfig->dnsipaddr = strdup(value);
   } else if (MATCH("Tunnel", "host")) {
