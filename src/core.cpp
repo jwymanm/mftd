@@ -283,10 +283,10 @@ int main(int argc, char* argv[]) {
     strcat(path, "\\" NAME ".ini");
     strcat(rpath, "\\..\\" CFGDIR "\\" NAME ".ini");
     // look for config file in same directory as binary or ../CFGDIR
-    if ((ini_parse(path, ini_handler, &config) < 0) && 
-	(ini_parse(rpath, ini_handler, &config) < 0)) {
-printf("path: %s, cpath: %s, rpath: %s\r\n", path, path, rpath);
-      printf("Can't load configuration file: '" NAME ".ini'"); exit(1);
+    if (ini_parse(path, ini_handler, &config) < 0) {
+      if (ini_parse(rpath, ini_handler, &config) < 0) {
+        printf("Can't load configuration file: '" NAME ".ini'\r\nSearch paths: \r\n\t%s\r\n\t%s", path, rpath); exit(1);
+      }
     }
   } else { exit(1); }
 

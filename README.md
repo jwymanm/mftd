@@ -11,7 +11,7 @@ It is useful so you do not have to use Windows ICS and deal with its unreliable 
 Build
 -----
 
-This only needs mingw-w64 (i686 or x64 for 32/64 bit) depending on what you comment/uncomment in the Makefile
+To build you will need GNU make, mingw-w64 (i686 or x64 for 32/64 bit) depending on what you comment/uncomment in the Makefile, and possibly cygwin for build tools. I believe it builds with regular mingw as well just follow the instructions in the Makefile.
 
 
 Use
