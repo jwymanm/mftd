@@ -17,13 +17,6 @@
 #define MAX_NATURAL_ALIGNMENT sizeof(DWORD)
 #endif
 
-#ifdef _MSC_VER
-   #define strcasecmp _stricmp
-   #define _CRT_SECURE_NO_WARNINGS
-   #pragma comment(lib, "ws2_32.lib")
-   #pragma comment(lib, "iphlpapi.lib")
-#endif
-
 struct data7 //cache
 {
 	char *mapname;
