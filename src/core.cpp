@@ -275,16 +275,20 @@ int main(int argc, char* argv[]) {
   OSVERSIONINFO osvi;
   osvi.dwOSVersionInfoSize = sizeof(osvi);
   bool result = GetVersionEx(&osvi);
-  TCHAR path[ _MAX_PATH + 1 ];
+  TCHAR path [ _MAX_PATH + 1 ] = "", rpath [_MAX_PATH + 1 ] = "";
 
   if (GetModuleFileName(0, path, sizeof(path) / sizeof(path[0])) > 0) {
     PathRemoveFileSpec(path);
+    strcat(rpath, path);
+    strcat(path, "\\" NAME ".ini");
+    strcat(rpath, "\\..\\" CFGDIR "\\" NAME ".ini");
     // look for config file in same directory as binary or ../CFGDIR
-    if ((ini_parse(strcat(path, "/" NAME ".ini"), ini_handler, &config) < 0) ||
-	(ini_parse(strcat(path, "/../" CFGDIR "/" NAME ".ini"), ini_handler, &config) < 0)) {
+    if ((ini_parse(path, ini_handler, &config) < 0) && 
+	(ini_parse(rpath, ini_handler, &config) < 0)) {
+printf("path: %s, cpath: %s, rpath: %s\r\n", path, path, rpath);
       printf("Can't load configuration file: '" NAME ".ini'"); exit(1);
     }
-  }
+  } else { exit(1); }
 
   if (result && osvi.dwPlatformId >= VER_PLATFORM_WIN32_NT) {
 

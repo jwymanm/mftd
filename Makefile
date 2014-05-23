@@ -41,7 +41,6 @@ STRIP    = strip
 
 # Compilation settings
 
-
 OBJS    = net.o monitor.o ini.o fdns.o tunnel.o dhcp.o core.o
 
 NAMES   = $(patsubst %, $(BUILDDIR)/%, $(NAME))
