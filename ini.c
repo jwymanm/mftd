@@ -8,8 +8,10 @@ int ini_handler(void* cfg, const char* section, const char* name, const char* va
   configuration* pconfig = (configuration*)cfg;
   if (MATCH("Monitor", "name")) {
     pconfig->ifname = strdup(value);
-  } else if (MATCH("Monitor", "ip")) {
-    pconfig->ipaddr = strdup(value);
+  } else if (MATCH("Monitor", "adptrip")) {
+    pconfig->adptrip = strdup(value);
+  } else if (MATCH("Monitor", "monip")) {
+    pconfig->monip = strdup(value);
   } else if (MATCH("Monitor", "mask")) {
     pconfig->netmask = strdup(value);
   } else if (MATCH("DNS", "ip")) {

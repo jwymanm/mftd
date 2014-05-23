@@ -1,6 +1,8 @@
 #include "core.h"
 #include "tunnel.h"
 
+#if TUNNEL
+
 bool tunnel_alive = false;
 
 int buffer_size = 4096;
@@ -47,7 +49,7 @@ int build_server(void) {
 	memset(&rc.server_addr, 0, sizeof(rc.server_addr));
 
 	rc.server_addr.sin_family = AF_INET;
-	rc.server_addr.sin_addr.s_addr = inet_addr(config.ipaddr);
+	rc.server_addr.sin_addr.s_addr = inet_addr(config.adptrip);
 	rc.server_addr.sin_port = htons(config.lport);
 	rc.server_socket = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -236,3 +238,5 @@ char *get_current_timestamp(void)
 	strftime(date_str, sizeof(date_str), "%Y-%m-%d %H:%M:%S", localtime(&date));
 	return date_str;
 }
+
+#endif

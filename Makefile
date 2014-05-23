@@ -8,16 +8,20 @@ SERVICE_DISPLAY_NAME=\""$(DESC)"\"
 MONITOR=1
 FDNS=1
 TUNNEL=1
-DHCP=0
+DHCP=1
 
+# 32-bit
 CC = i686-w64-mingw32-g++
 LD = i686-w64-mingw32-g++
+
+# 64-bit
 #CC = x86_64-w64-mingw32-g++
 #LD = x86_64-w64-mingw32-g++
-#CFLAGS = -I./ -D_WIN32_WINNT=0x0501
-CFLAGS = -I./ -DSERVICE_NAME=$(SERVICE_NAME) -DSERVICE_DISPLAY_NAME=$(SERVICE_DISPLAY_NAME) -DMONITOR=$(MONITOR) -DFDNS=$(FDNS) -DTUNNEL=$(TUNNEL) -DDHCP=$(DHCP)
+
+# if you want to use mingw instead of mingw-w64 add -D_WIN32_WINNT=0x0501
+CFLAGS = -Iinclude -DSERVICE_NAME=$(SERVICE_NAME) -DSERVICE_DISPLAY_NAME=$(SERVICE_DISPLAY_NAME) -DMONITOR=$(MONITOR) -DFDNS=$(FDNS) -DTUNNEL=$(TUNNEL) -DDHCP=$(DHCP)
 LDFLAGS = -static -lwsock32 -liphlpapi -lws2_32 -lpthread -lshlwapi
-OBJS = monitor.o ini.o fdns.o tunnel.o core.o
+OBJS = net.o monitor.o ini.o fdns.o tunnel.o dhcp.o core.o
 
 BINDIR = .
 INSTALL = install

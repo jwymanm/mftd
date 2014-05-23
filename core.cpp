@@ -1,8 +1,14 @@
+/*
+ core data and routines
+*/
+
 #include "core.h"
 #include "ini.h"
-#include "fdns.h"
+#include "net.h"
 #include "monitor.h"
+#include "fdns.h"
 #include "tunnel.h"
+#include "dhcp.h"
 
 char serviceName[] = SERVICE_NAME;
 char displayName[] = SERVICE_DISPLAY_NAME;
@@ -48,78 +54,68 @@ int debug(int cond, const char* xstr, void* data) {
   }
 }
 
-void startSubThreads() {
-
+void startThreads() {
+#if FDNS
   if (!fdns_running) {
-    pthread_create (&threads[1], NULL, fdns, NULL);
+    pthread_create (&threads[FDNS_TIDX], NULL, fdns, NULL);
   }
+#endif
+#if TUNNEL
   if (!tunnel_alive) {
-    pthread_create (&threads[2], NULL, tunnel, NULL);
+    pthread_create (&threads[TUNNEL_TIDX], NULL, tunnel, NULL);
   }
-//  if (!dhcp_running) {
-//    pthread_create (&threads[3], NULL, dhcp, NULL);
-//  } 
+#endif
+#if DHCP
+  if (!dhcp_running) {
+    pthread_create (&threads[DHCP_TIDX], NULL, dhcp, NULL);
+  } 
+#endif
 }
 
-void stopSubThreads() {
-
+void stopThreads() {
+#if FDNS
   if (fdns_running) {
     debug(0, "Killing fdns", NULL);
     fdns_cleanup(fdns_sd, 0);
-    pthread_kill(threads[1], SIGINT);
+    pthread_kill(threads[FDNS_TIDX], SIGINT);
     Sleep(2000);
   }
-
+#endif
+#if TUNNEL
   if (tunnel_alive) {
     debug(0, "Killing tunnel", NULL);
     tunnel_cleanup(rc.server_socket, rc.remote_socket, 0);
-    pthread_kill(threads[2], SIGINT);
+    pthread_kill(threads[TUNNEL_TIDX], SIGINT);
     Sleep(2000);
   }
-
-  /*
+#endif
+#if DHCP
   if (dhcp_running) {
     debug(0, "Killing dhcp", NULL);
-    dhcp_cleanup();
-    pthread_kill(threads[3], SIGINT);
+    dhcp_cleanup(0);
+    pthread_kill(threads[DHCP_TIDX], SIGINT);
     Sleep(2000);
   }
-  */
-}
-
-void startMonitor() {
-  pthread_create(&threads[0], NULL, monAdptr, NULL);
-  debug(0, "Looking for adapter: ", (void *) config.ifname);
-}
-
-void stopMonitor() {
-  pthread_kill(threads[0], SIGINT);
-}
-
-void monLoop() {
-
-  Sleep(MON_TO*2);
-
-  if (adptr_exist) {
-    if (strcmp(adptr_ip, config.ipaddr) != 0) {
-      debug(0, "Setting ip..", NULL);
-      setAdptrIP();
-    } else {
-      if (!adptr_ipset) {
-        adptr_ipset = true;
-        debug(DEBUG_IP, "IP set to: ", (void *)config.ipaddr);
-	startSubThreads();
-      }
-    }
-  } else {
-    stopSubThreads();
-    debug(0, "Waiting on adapter", NULL);
-  }
-
+#endif
 }
 
 void runThreads() {
-  startMonitor(); while (1) { monLoop(); };
+#if MONITOR
+  startMonitor();
+  while (1) { monitorLoop(); };
+#else
+  // if not monitoring then just attempt to set adapter ip if/once it is available and then run threads
+  // mostly useful for running to provide simple services on an as-needed basis TODO: add DHCP only flag?
+  if (getAdaptrInfo() && !adptr_exist) {
+    adptr_exist = true;
+    Sleep(5000);
+    if (strcmp(adptr_ip, config.adptrip) != 0) {
+      setAdptrIP();
+      Sleep(3000);
+    }
+    startThreads();
+  }
+#endif
 }
 
 void WINAPI ServiceControlHandler(DWORD controlCode) {
@@ -167,14 +163,19 @@ void WINAPI ServiceMain(DWORD /*argc*/, TCHAR* /*argv*/[]) {
     serviceStatus.dwCurrentState = SERVICE_RUNNING;
     SetServiceStatus(serviceStatusHandle, &serviceStatus);
 
+#if MONITOR
     startMonitor();
-
-    do { monLoop(); }
+    do { monitorLoop(); }
+#else 
+    do { runThreads(); Sleep(10000); }
+#endif
     while (WaitForSingleObject(stopServiceEvent, 0) == WAIT_TIMEOUT);
 
-    stopSubThreads();
+    stopThreads();
 
+#if MONITOR
     stopMonitor();
+#endif
 
     serviceStatus.dwCurrentState = SERVICE_STOP_PENDING;
     serviceStatus.dwCheckPoint = 2;
@@ -182,7 +183,7 @@ void WINAPI ServiceMain(DWORD /*argc*/, TCHAR* /*argv*/[]) {
     SetServiceStatus(serviceStatusHandle, &serviceStatus);
 
     Sleep(2000); 
-    // TODO: do for loop here to cleanup until all threads have been cleaned
+    // TODO: do for loop here to cleanup until all threads' have been cleaned
     WSACleanup();
 
     serviceStatus.dwControlsAccepted &= ~(SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN);

@@ -1,19 +1,17 @@
 #include "core.h"
 #include "dhcp.h"
 
-bool dhcp_running = false;
+#if DHCP
 
-//Global Variables
-time_t t = time(NULL);
-//bool kRunning = true;
-extern "C" bool kRunning;
-bool verbatim = false;
-//SERVICE_STATUS serviceStatus;
-//SERVICE_STATUS_HANDLE serviceStatusHandle = 0;
 extern SERVICE_STATUS serviceStatus;
 extern SERVICE_STATUS_HANDLE serviceStatusHandle;
-//HANDLE stopServiceEvent = 0;
 extern HANDLE stopServiceEvent;
+
+bool dhcp_running = false;
+bool verbatim = false;
+
+time_t t = time(NULL);
+
 data1 network;
 data2 cfig;
 data9 dhcpr;
@@ -21,10 +19,6 @@ data9 token;
 data71 lump;
 dhcpMap dhcpCache;
 //expiryMap dhcpAge;
-//char serviceName[] = "bhnla";
-//char displayName[] = "BHN Leakage Analysis";
-extern "C" char serviceName[];
-extern "C" char displayName[];
 char tempbuff[512];
 char extbuff[512];
 char logBuff[256];
@@ -42,7 +36,6 @@ fd_set writefds;
 HANDLE fEvent;
 HANDLE lEvent;
 
-//constants
 char NBSP = 32;
 const char arpa[] = ".in-addr.arpa";
 char RANGESET[] = "RANGE_SET";
@@ -54,7 +47,7 @@ const char send200[] = "HTTP/1.1 200 OK\r\nDate: %s\r\nLast-Modified: %s\r\nCont
 const char send403[] = "HTTP/1.1 403 Forbidden\r\n\r\n<h1>403 Forbidden</h1>";
 const char send404[] = "HTTP/1.1 404 Not Found\r\n\r\n<h1>404 Not Found</h1>";
 const char td200[] = "<td>%s</td>";
-const char sVersion[] = "BHN Leakage Analysis";
+const char sVersion[] = SERVICE_DISPLAY_NAME;
 const char htmlStart[] = "<html>\n<head>\n<title>%s</title><meta http-equiv=\"refresh\" content=\"60\">\n<meta http-equiv=\"cache-control\" content=\"no-cache\">\n</head>\n";
 //const char bodyStart[] = "<body bgcolor=\"#cccccc\"><table width=\"800\"><tr><td align=\"center\"><font size=\"5\"><b>%s</b></font></b></b></td></tr><tr><td align=\"right\"><a target=\"_new\" href=\"http://dhcp-dns-server.sourceforge.net/\">http://dhcp-dns-server.sourceforge.net/</b></b></td></tr></table>";
 const char bodyStart[] = "<body bgcolor=\"#cccccc\"><table width=640><tr><td align=\"center\"><font size=\"5\"><b>%s</b></font></td></tr><tr><td align=\"right\"></td></tr></table>";
@@ -179,161 +172,6 @@ const data4 opData[] = {
         { "NextServer", 254, 3, 1},
     };
 
-//void WINAPI ServiceMain(DWORD /*argc*/, TCHAR* /*argv*/[])
-/*
-{
-	serviceStatus.dwServiceType = SERVICE_WIN32;
-	serviceStatus.dwCurrentState = SERVICE_STOPPED;
-	serviceStatus.dwControlsAccepted = 0;
-	serviceStatus.dwWin32ExitCode = NO_ERROR;
-	serviceStatus.dwServiceSpecificExitCode = NO_ERROR;
-	serviceStatus.dwCheckPoint = 0;
-	serviceStatus.dwWaitHint = 0;
-
-	serviceStatusHandle = RegisterServiceCtrlHandler(serviceName, ServiceControlHandler);
-
-	if (serviceStatusHandle)
-	{
-		serviceStatus.dwCurrentState = SERVICE_START_PENDING;
-		SetServiceStatus(serviceStatusHandle, &serviceStatus);
-
-		if (_beginthread(init, 0, NULL) == 0)
-		{
-			if (cfig.dhcpLogLevel)
-			{
-				sprintf(logBuff, "Thread Creation Failed");
-				logDHCPMess(logBuff, 1);
-			}
-			exit(-1);
-		}
-
-		tv.tv_sec = 20;
-		tv.tv_usec = 0;
-
-		stopServiceEvent = CreateEvent(0, FALSE, FALSE, 0);
-		serviceStatus.dwControlsAccepted |= (SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN);
-		serviceStatus.dwCurrentState = SERVICE_RUNNING;
-		SetServiceStatus(serviceStatusHandle, &serviceStatus);
-
-		do
-		{
-			network.busy = false;
-
-			if (!network.dhcpConn[0].ready)
-			{
-				Sleep(1000);
-				continue;
-			}
-
-			if (!network.ready)
-			{
-				Sleep(1000);
-				continue;
-			}
-
-			FD_ZERO(&readfds);
-
-			if (cfig.dhcpReplConn.ready)
-				FD_SET(cfig.dhcpReplConn.sock, &readfds);
-
-			if (network.httpConn.ready)
-				FD_SET(network.httpConn.sock, &readfds);
-
-			for (int i = 0; i < MAX_SERVERS && network.dhcpConn[i].ready; i++)
-				FD_SET(network.dhcpConn[i].sock, &readfds);
-
-			if (select(network.maxFD, &readfds, NULL, NULL, &tv))
-			{
-				t = time(NULL);
-
-				if (network.ready)
-				{
-					network.busy = true;
-
-					if (network.httpConn.ready && FD_ISSET(network.httpConn.sock, &readfds))
-					{
-						data19 *req = (data19*)calloc(1, sizeof(data19));
-
-						if (req)
-						{
-							req->sockLen = sizeof(req->remote);
-							req->sock = accept(network.httpConn.sock, (sockaddr*)&req->remote, &req->sockLen);
-
-							if (req->sock == INVALID_SOCKET)
-							{
-								sprintf(logBuff, "Accept Failed, Error=%u\n", WSAGetLastError());
-								logDHCPMess(logBuff, 1);
-								free(req);
-							}
-							else
-								procHTTP(req);
-						}
-						else
-						{
-							sprintf(logBuff, "Memory Error");
-							logDHCPMess(logBuff, 1);
-						}
-					}
-
-					for (int i = 0; i < MAX_SERVERS && network.dhcpConn[i].ready; i++)
-					{
-						if (FD_ISSET(network.dhcpConn[i].sock, &readfds) && gdmess(&dhcpr, i) && sdmess(&dhcpr))
-							alad(&dhcpr);
-					}
-
-					if (cfig.dhcpReplConn.ready && FD_ISSET(cfig.dhcpReplConn.sock, &readfds))
-					{
-						errno = 0;
-						dhcpr.sockLen = sizeof(dhcpr.remote);
-						dhcpr.bytes = recvfrom(cfig.dhcpReplConn.sock,
-											   dhcpr.raw,
-											   sizeof(dhcpr.raw),
-											   0,
-											   (sockaddr*)&dhcpr.remote,
-											   &dhcpr.sockLen);
-
-						errno = WSAGetLastError();
-
-						if (errno || dhcpr.bytes <= 0)
-							cfig.dhcpRepl = 0;
-					}
-				}
-			}
-			else
-				t = time(NULL);
-
-			//checkSize();
-		}
-		while (WaitForSingleObject(stopServiceEvent, 0) == WAIT_TIMEOUT);
-
-		serviceStatus.dwCurrentState = SERVICE_STOP_PENDING;
-		//serviceStatus.dwCheckPoint = 2;
-		//serviceStatus.dwWaitHint = 1000;
-		SetServiceStatus(serviceStatusHandle, &serviceStatus);
-		sprintf(logBuff, "Closing Network Connections...");
-		logDHCPMess(logBuff, 1);
-		closeConn();
-
-		if (cfig.replication && cfig.dhcpReplConn.ready)
-			closesocket(cfig.dhcpReplConn.sock);
-
-		sprintf(logBuff, "Open DHCP Server Stopped !\n");
-		logDHCPMess(logBuff, 1);
-
-		Sleep(2000);
-
-		WSACleanup();
-
-		serviceStatus.dwControlsAccepted &= ~(SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN);
-		serviceStatus.dwCurrentState = SERVICE_STOPPED;
-		SetServiceStatus(serviceStatusHandle, &serviceStatus);
-
-		CloseHandle(stopServiceEvent);
-		stopServiceEvent = 0;
-	}
-}
-*/
-
 void closeConn()
 {
 	if (network.httpConn.ready)
@@ -344,154 +182,113 @@ void closeConn()
 			closesocket(network.dhcpConn[i].sock);
 }
 
+int dhcp_cleanup(int exitthread) {
+  closeConn();
+  if (cfig.replication && cfig.dhcpReplConn.ready) closesocket(cfig.dhcpReplConn.sock);
 /*
-void closeConn()
-{
-	if (network.httpConn.ready)
-	{
-		closesocket(network.httpConn.sock);
-		printf("httpConn %s:%u closed\n", IP2String(tempbuff, network.httpConn.server), network.httpConn.port);
-	}
-
-	for (int i = 0; i < MAX_SERVERS && network.dhcpConn[i].loaded; i++)
-		if (network.dhcpConn[i].ready)
-		{
-			closesocket(network.dhcpConn[i].sock);
-			printf("dhcpConn %s:%u closed\n", IP2String(tempbuff, network.dhcpConn[i].server), network.dhcpConn[i].port);
-		}
-
-	if (cfig.replication && cfig.dhcpReplConn.ready)
-	{
-		closesocket(cfig.dhcpReplConn.sock);
-		printf("dhcpReplConn %s:%u closed\n", IP2String(tempbuff, cfig.dhcpReplConn.server), cfig.dhcpReplConn.port);
-	}
-
-    if (dnsService)
-    {
-        for (int i = 0; i < MAX_SERVERS && network.dnsUdpConn[i].loaded; i++)
-        	if (network.dnsUdpConn[i].ready)
-        	{
-           		closesocket(network.dnsUdpConn[i].sock);
-				printf("dnsUdpConn %s:%u closed\n", IP2String(tempbuff, network.dnsUdpConn[i].server), network.dnsUdpConn[i].port);
-			}
-
-        for (int i = 0; i < MAX_SERVERS && network.dnsTcpConn[i].loaded; i++)
-        	if (network.dnsTcpConn[i].ready)
-        	{
-            	closesocket(network.dnsTcpConn[i].sock);
-				printf("dnsTcpConn %s:%u closed\n", IP2String(tempbuff, network.dnsTcpConn[i].server), network.dnsTcpConn[i].port);
-			}
-
-        if (network.forwConn.ready)
-        {
-        	closesocket(network.forwConn.sock);
-			printf("forwConn %s:%u closed\n", IP2String(tempbuff, network.forwConn.server), network.forwConn.port);
-		}
-    }
-}
+  sprintf(logBuff, "Closing Network Connections...");
+  logDHCPMess(logBuff, 1);
+  sprintf(logBuff, "DHCP stopped");
+  logDHCPMess(logBuff, 1);
 */
+  dhcp_running = false;
+  WSACleanup();
+  if (exitthread) pthread_exit(NULL);
+  else return 0;
+}
 
 void* dhcp(void *arg)
 {
-	//printf("%i\n",t);
-	//printf("%i\n",sizeof(data7));
-	//printf("%d\n",dnsCache[currentInd].max_size());
+  //printf("%i\n",t);
+  //printf("%i\n",sizeof(data7));
+  //printf("%d\n",dnsCache[currentInd].max_size());
+
   dhcp_running = true;
-	verbatim = true;
+  verbatim = true;
 
-	if (_beginthread(init, 0, NULL) == 0) {
-		sprintf(logBuff, "Thread Creation Failed");
-		logDHCPMess(logBuff, 1);
-		pthread_exit(NULL);
-	}
+  if (_beginthread(init, 0, NULL) == 0) {
+    sprintf(logBuff, "Thread Creation Failed");
+    logDHCPMess(logBuff, 1);
+    pthread_exit(NULL);
+  }
 
-	tv.tv_sec = 20;
-	tv.tv_usec = 0;
+  tv.tv_sec = 20;
+  tv.tv_usec = 0;
 
-	do {
-		network.busy = false;
+  do {
 
-		if (!network.dhcpConn[0].ready) {
-			Sleep(1000);
-			continue;
-		}
+    network.busy = false;
 
-		if (!network.ready) {
-			Sleep(1000);
-			continue;
-		}
+    if (!network.dhcpConn[0].ready) {
+      Sleep(1000);
+      continue;
+    }
 
-		FD_ZERO(&readfds);
+    if (!network.ready) {
+      Sleep(1000);
+      continue;
+    }
 
-		if (cfig.dhcpReplConn.ready)
-			FD_SET(cfig.dhcpReplConn.sock, &readfds);
+    FD_ZERO(&readfds);
 
-		if (network.httpConn.ready)
-			FD_SET(network.httpConn.sock, &readfds);
+    if (cfig.dhcpReplConn.ready)
+      FD_SET(cfig.dhcpReplConn.sock, &readfds);
 
-		for (int i = 0; i < MAX_SERVERS && network.dhcpConn[i].ready; i++)
-			FD_SET(network.dhcpConn[i].sock, &readfds);
+    if (network.httpConn.ready)
+      FD_SET(network.httpConn.sock, &readfds);
 
-		if (select(network.maxFD, &readfds, NULL, NULL, &tv)) {
-			t = time(NULL);
+    for (int i = 0; i < MAX_SERVERS && network.dhcpConn[i].ready; i++)
+      FD_SET(network.dhcpConn[i].sock, &readfds);
 
-			if (network.ready) {
-				network.busy = true;
+    if (select(network.maxFD, &readfds, NULL, NULL, &tv)) {
 
-				if (network.httpConn.ready && FD_ISSET(network.httpConn.sock, &readfds)) {
-					data19 *req = (data19*)calloc(1, sizeof(data19));
-					if (req) {
-						req->sockLen = sizeof(req->remote);
-						req->sock = accept(network.httpConn.sock, (sockaddr*)&req->remote, &req->sockLen);
+      t = time(NULL);
 
-						if (req->sock == INVALID_SOCKET) {
-							sprintf(logBuff, "Accept Failed, Error=%u\n", WSAGetLastError());
-							logDHCPMess(logBuff, 1);
-							free(req);
-						}
-						else
-							procHTTP(req);
-					}
-					else {
-						sprintf(logBuff, "Memory Error");
-						logDHCPMess(logBuff, 1);
-					}
-				}
+      if (network.ready) {
 
-				for (int i = 0; i < MAX_SERVERS && network.dhcpConn[i].ready; i++) {
-					if (FD_ISSET(network.dhcpConn[i].sock, &readfds) && gdmess(&dhcpr, i) && sdmess(&dhcpr))
-						alad(&dhcpr);
-				}
+        network.busy = true;
 
-				if (cfig.dhcpReplConn.ready && FD_ISSET(cfig.dhcpReplConn.sock, &readfds)) {
-					errno = 0;
-					dhcpr.sockLen = sizeof(dhcpr.remote);
-					dhcpr.bytes = recvfrom(cfig.dhcpReplConn.sock, dhcpr.raw, sizeof(dhcpr.raw), 0, (sockaddr*)&dhcpr.remote, &dhcpr.sockLen);
-					errno = WSAGetLastError();
-					if (errno || dhcpr.bytes <= 0) cfig.dhcpRepl = 0;
-				}
-			}
-		}
-		else
-			t = time(NULL);
+        if (network.httpConn.ready && FD_ISSET(network.httpConn.sock, &readfds)) {
+          data19 *req = (data19*)calloc(1, sizeof(data19));
 
-		//checkSize();
+          if (req) {
 
-		//printf("CacheInd=%d\n");
-	}
-	while (true);
+            req->sockLen = sizeof(req->remote);
+            req->sock = accept(network.httpConn.sock, (sockaddr*)&req->remote, &req->sockLen);
 
-	kRunning = false;
-  sprintf(logBuff, "Closing Network Connections...");
-  logDHCPMess(logBuff, 1);
-	closeConn();
+            if (req->sock == INVALID_SOCKET) {
+              sprintf(logBuff, "Accept Failed, Error=%u\n", WSAGetLastError());
+              logDHCPMess(logBuff, 1);
+              free(req);
+            } else procHTTP(req);
 
-	if (cfig.replication && cfig.dhcpReplConn.ready)
-		closesocket(cfig.dhcpReplConn.sock);
+          } else {
+            sprintf(logBuff, "Memory Error");
+            logDHCPMess(logBuff, 1);
+          }
 
-  sprintf(logBuff, "Open DHCP Server Stopped !\n");
-  logDHCPMess(logBuff, 1);
-	WSACleanup();
+        }
+
+        for (int i = 0; i < MAX_SERVERS && network.dhcpConn[i].ready; i++) {
+          if (FD_ISSET(network.dhcpConn[i].sock, &readfds) && gdmess(&dhcpr, i) && sdmess(&dhcpr)) alad(&dhcpr);
+        }
+
+        if (cfig.dhcpReplConn.ready && FD_ISSET(cfig.dhcpReplConn.sock, &readfds)) {
+          errno = 0;
+          dhcpr.sockLen = sizeof(dhcpr.remote);
+          dhcpr.bytes = recvfrom(cfig.dhcpReplConn.sock, dhcpr.raw, sizeof(dhcpr.raw), 0, (sockaddr*)&dhcpr.remote, &dhcpr.sockLen);
+          errno = WSAGetLastError();
+          if (errno || dhcpr.bytes <= 0) cfig.dhcpRepl = 0;
+        }
+
+      }
+
+    } else t = time(NULL);
+    //checkSize();
+    //printf("CacheInd=%d\n");
+  }
+  while (dhcp_running);
+
 }
 
 MYWORD fUShort(void *raw) {
@@ -647,7 +444,7 @@ void sendStatus(data19 *req)
 		fp += sprintf(fp, "<tr><th>Mac Address</th><th>IP</th><th>Lease Expiry</th><th>Hostname (first 20 chars)</th></tr>\n");
 	}
 
-	for (p = dhcpCache.begin(); kRunning && p != dhcpCache.end() && fp < maxData; p++) {
+	for (p = dhcpCache.begin(); dhcp_running && p != dhcpCache.end() && fp < maxData; p++) {
 		if ((dhcpEntry = p->second) && dhcpEntry->display && dhcpEntry->expiry >= t) {
 			fp += sprintf(fp, "<tr>");
 			fp += sprintf(fp, td200, dhcpEntry->mapname);
@@ -694,9 +491,9 @@ void sendStatus(data19 *req)
 	fp += sprintf(fp, "<tr><th colspan=\"5\"><font size=\"5\"><i>Free Dynamic Leases</i></font></th></tr>\n");
 	MYBYTE colNum = 0;
 
-	for (char rangeInd = 0; kRunning && rangeInd < cfig.rangeCount && fp < maxData; rangeInd++)
+	for (char rangeInd = 0; dhcp_running && rangeInd < cfig.rangeCount && fp < maxData; rangeInd++)
 	{
-		for (MYDWORD ind = 0, iip = cfig.dhcpRanges[rangeInd].rangeStart; kRunning && iip <= cfig.dhcpRanges[rangeInd].rangeEnd; iip++, ind++)
+		for (MYDWORD ind = 0, iip = cfig.dhcpRanges[rangeInd].rangeStart; dhcp_running && iip <= cfig.dhcpRanges[rangeInd].rangeEnd; iip++, ind++)
 		{
 			if (cfig.dhcpRanges[rangeInd].expiry[ind] < t)
 			{
@@ -725,7 +522,7 @@ void sendStatus(data19 *req)
 	fp += sprintf(fp, "<tr><th colspan=\"4\"><font size=\"5\"><i>Free Dynamic Leases</i></font></th></tr>\n");
 	fp += sprintf(fp, "<tr><td><b>DHCP Range</b></td><td align=\"right\"><b>Available Leases</b></td><td align=\"right\"><b>Free Leases</b></td></tr>\n");
 
-	for (char rangeInd = 0; kRunning && rangeInd < cfig.rangeCount && fp < maxData; rangeInd++)
+	for (char rangeInd = 0; dhcp_running && rangeInd < cfig.rangeCount && fp < maxData; rangeInd++)
 	{
 		float ipused = 0;
 		float ipfree = 0;
@@ -749,7 +546,7 @@ void sendStatus(data19 *req)
 	fp += sprintf(fp, "<tr><th>Mac Address</th><th>IP</th><th>Mac Address</th><th>IP</th></tr>\n");
 	MYBYTE colNum = 0;
 
-	for (p = dhcpCache.begin(); kRunning && p != dhcpCache.end() && fp < maxData; p++)
+	for (p = dhcpCache.begin(); dhcp_running && p != dhcpCache.end() && fp < maxData; p++)
 	{
 		if ((dhcpEntry = p->second) && dhcpEntry->fixed && dhcpEntry->expiry < t)
 		{
@@ -816,7 +613,7 @@ void sendScopeStatus(data19 *req)
 	fp += sprintf(fp, "<tr><td><b>DHCP Range</b></td><td align=\"right\"><b>IPs Used</b></td><td align=\"right\"><b>IPs Free</b></td><td align=\"right\"><b>%% Free</b></td></tr>\n");
 	MYBYTE colNum = 0;
 
-	for (char rangeInd = 0; kRunning && rangeInd < cfig.rangeCount && fp < maxData; rangeInd++)
+	for (char rangeInd = 0; dhcp_running && rangeInd < cfig.rangeCount && fp < maxData; rangeInd++)
 	{
 		float ipused = 0;
 		float ipfree = 0;
@@ -856,7 +653,7 @@ void __cdecl sendHTTP(void *lpParam)
 	fd_set writefds1;
 	int sent = 0;
 
-	while (kRunning && req->bytes > 0)
+	while (dhcp_running && req->bytes > 0)
 	{
 		tv1.tv_sec = 5;
 		tv1.tv_usec = 0;
@@ -5183,27 +4980,27 @@ MYWORD gdmess(data9 *req, MYBYTE sockInd)
 		if (req->req_type == DHCP_MESS_NONE)
 		{
 			if (req->dhcpp.header.bp_giaddr)
-				sprintf(logBuff, "BOOTPREQUEST for %s (%s) from RelayAgent %s received", req->chaddr, req->hostname, IP2String(tempbuff, req->dhcpp.header.bp_giaddr));
+			  sprintf(logBuff, "BOOTPREQUEST for %s (%s) from RelayAgent %s received", req->chaddr, req->hostname, IP2String(tempbuff, req->dhcpp.header.bp_giaddr));
 			else
-				sprintf(logBuff, "BOOTPREQUEST for %s (%s) from interface %s received", req->chaddr, req->hostname, IP2String(tempbuff, network.dhcpConn[req->sockInd].server));
+			  sprintf(logBuff, "BOOTPREQUEST for %s (%s) from interface %s received", req->chaddr, req->hostname, IP2String(tempbuff, network.dhcpConn[req->sockInd].server));
 
 			logDHCPMess(logBuff, 2);
 		}
 		else if (req->req_type == DHCP_MESS_DISCOVER)
 		{
 			if (req->dhcpp.header.bp_giaddr)
-				sprintf(logBuff, "DHCPDISCOVER for %s (%s) from RelayAgent %s received", req->chaddr, req->hostname, IP2String(tempbuff, req->dhcpp.header.bp_giaddr));
+		  	  sprintf(logBuff, "DHCPDISCOVER for %s (%s) from RelayAgent %s received", req->chaddr, req->hostname, IP2String(tempbuff, req->dhcpp.header.bp_giaddr));
 			else
-				sprintf(logBuff, "DHCPDISCOVER for %s (%s) from interface %s received", req->chaddr, req->hostname, IP2String(tempbuff, network.dhcpConn[req->sockInd].server));
+			  sprintf(logBuff, "DHCPDISCOVER for %s (%s) from interface %s received", req->chaddr, req->hostname, IP2String(tempbuff, network.dhcpConn[req->sockInd].server));
 
 			logDHCPMess(logBuff, 2);
 		}
 		else if (req->req_type == DHCP_MESS_REQUEST)
 		{
 			if (req->dhcpp.header.bp_giaddr)
-				sprintf(logBuff, "DHCPREQUEST for %s (%s) from RelayAgent %s received", req->chaddr, req->hostname, IP2String(tempbuff, req->dhcpp.header.bp_giaddr));
+	 		  sprintf(logBuff, "DHCPREQUEST for %s (%s) from RelayAgent %s received", req->chaddr, req->hostname, IP2String(tempbuff, req->dhcpp.header.bp_giaddr));
 			else
-				sprintf(logBuff, "DHCPREQUEST for %s (%s) from interface %s received", req->chaddr, req->hostname, IP2String(tempbuff, network.dhcpConn[req->sockInd].server));
+			  sprintf(logBuff, "DHCPREQUEST for %s (%s) from interface %s received", req->chaddr, req->hostname, IP2String(tempbuff, network.dhcpConn[req->sockInd].server));
 
 			logDHCPMess(logBuff, 2);
 		}
@@ -5404,3 +5201,5 @@ data7 *createCache(data71 *lump)
 
 	return cache;
 }
+
+#endif

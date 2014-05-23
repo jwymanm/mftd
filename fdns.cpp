@@ -2,6 +2,8 @@
 #include "core.h"
 #include "fdns.h"
 
+#if FDNS
+
 bool fdns_running = false;
 bool fdns_docleanup = false;
 int fdns_sd;
@@ -50,7 +52,7 @@ void *fdns(void *arg) {
 	memset(&addr, 0, sizeof(addr));
 
   server.sin_family = AF_INET;
-  server.sin_addr.s_addr = inet_addr(config.ipaddr);//htonl(INADDR_ANY);
+  server.sin_addr.s_addr = inet_addr(config.adptrip);//htonl(INADDR_ANY);
   server.sin_port = htons(DNSPORT);
 
   rc = bind(fdns_sd, (struct sockaddr *) &server,sizeof(server));
@@ -84,3 +86,5 @@ void *fdns(void *arg) {
  }
  fdns_cleanup(fdns_sd,1);
 }
+
+#endif
