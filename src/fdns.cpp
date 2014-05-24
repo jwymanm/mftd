@@ -5,12 +5,13 @@
 #if FDNS
 
 bool fdns_running = false;
-bool fdns_docleanup = false;
+
 int fdns_sd;
 
 void fdns_cleanup(int sd, int exitthread) {
   if (sd) { shutdown(sd, 2); closesocket(sd); }
   fdns_running = false;
+  WSACleanup();
   if (exitthread) pthread_exit(NULL);
   else return;
 }
@@ -48,8 +49,8 @@ void *fdns(void *arg) {
     fdns_cleanup(fdns_sd,1);
   }
 
-	memset(&server, 0, sizeof(server));
-	memset(&addr, 0, sizeof(addr));
+  memset(&server, 0, sizeof(server));
+  memset(&addr, 0, sizeof(addr));
 
   server.sin_family = AF_INET;
   server.sin_addr.s_addr = inet_addr(config.adptrip);//htonl(INADDR_ANY);
@@ -66,7 +67,7 @@ void *fdns(void *arg) {
   len = sizeof(addr);
   flags = 0;
 
-  while (1) {
+  do {
     int n = recvfrom(fdns_sd, msg, DNSMSG_SIZE, flags, (struct sockaddr *) &addr, &len);
     if (n < 0) { continue; }
     // Same Id
@@ -83,7 +84,8 @@ void *fdns(void *arg) {
     msg[n++]=ip4[0];msg[n++]=ip4[1];msg[n++]=ip4[2];msg[n++]=ip4[3]; // IP
     // Send the answer
     sendto(fdns_sd,msg,n,flags,(struct sockaddr *)&addr,len);
- }
+ } while (fdns_running);
+
  fdns_cleanup(fdns_sd,1);
 }
 

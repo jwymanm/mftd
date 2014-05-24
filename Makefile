@@ -14,8 +14,8 @@ SERVICE_DISPLAY_NAME="$(DESC)"
 # Change to 0 to remove a module, 1 to include
 
 MONITOR=1 # Monitors and reports adapter and device status
-FDNS=1    # Fake DNS 
-TUNNEL=1  # TCP tunnel on demand
+FDNS=0    # Fake DNS 
+TUNNEL=0  # TCP tunnel on demand
 DHCP=1	  # DHCP server
 
 # Path settings
@@ -24,6 +24,7 @@ SRCDIR   = src
 CFGDIR   = etc
 BINDIR   = bin
 TMPDIR   = tmp
+BOOSTDIR = c:/boost_1_55_0
 BUILDDIR = $(TMPDIR)/build
 VPATH    = $(SRCDIR):$(BUILDDIR)
 
@@ -53,7 +54,7 @@ OBJS    = net.o monitor.o ini.o fdns.o tunnel.o dhcp.o core.o
 NAMES   = $(patsubst %, $(BUILDDIR)/%, $(NAME))
 OBJSS   = $(patsubst %, $(BUILDDIR)/%, $(OBJS))
 
-CFLAGS  = -I$(SRCDIR)/include -DNAME=\""$(NAME)"\" -DSERVICE_NAME=\"$(SERVICE_NAME)\" -DSERVICE_DISPLAY_NAME=\"$(SERVICE_DISPLAY_NAME)\" -DMONITOR=$(MONITOR) -DFDNS=$(FDNS) -DTUNNEL=$(TUNNEL) -DDHCP=$(DHCP) -DCFGDIR=\"$(CFGDIR)\" -DTMPDIR=$(TMPDIR)
+CFLAGS  = -I$(BOOSTDIR) -I$(SRCDIR)/include -DNAME=\""$(NAME)"\" -DSERVICE_NAME=\"$(SERVICE_NAME)\" -DSERVICE_DISPLAY_NAME=\"$(SERVICE_DISPLAY_NAME)\" -DMONITOR=$(MONITOR) -DFDNS=$(FDNS) -DTUNNEL=$(TUNNEL) -DDHCP=$(DHCP) -DCFGDIR=\"$(CFGDIR)\" -DTMPDIR=$(TMPDIR)
 LDFLAGS = -static -lwsock32 -liphlpapi -lws2_32 -lpthread -lshlwapi
 
 all: prep compile install

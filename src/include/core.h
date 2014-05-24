@@ -42,9 +42,10 @@ typedef struct {
   const char* monip;
   const char* dnsipaddr;
   const char* host;
+  const char* cfgfn;
   int rport;
   int lport;
-  const char* logging;
+  int logging;
 } configuration;
 
 /* core */

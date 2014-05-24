@@ -3,6 +3,7 @@ mftd
 
 Monitor adapter, Fake DNS, Tunnel, and DHCP combined into one Windows Service
 
+
 This program was written to provide a quick tunnel that sends all traffic to a certain port to another host. It includes a fake dns provider so that if hostnames are used then all requests to that hostname:port will be received by this program and tunneled properly. DHCP works if enabled in the source.
 
 It is useful so you do not have to use Windows ICS and deal with its unreliable nature along side VPN traffic.
@@ -28,3 +29,29 @@ Configuration
 -------------
 
 Most configuration options are included in the default configuration file mftd.ini. For more dhcp options please read OpenDHCP's pdf.
+
+
+Directory Layout
+----------------
+
+bin/ -> mftd.exe
+
+
+etc/
+
+  mftd.ini
+
+  mftd will check for its configuration file in the same directory it is run from and then in ../etc
+
+  mftd.state
+
+  dhcp lease information stored in same directory as config
+
+  mftd.url
+
+  shortcut file auto generated pointing to web address of http server
+
+
+log/ -> log files
+
+  logging is done automatically in a directory called log wherever the config file is found

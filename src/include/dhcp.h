@@ -5,9 +5,6 @@
 extern bool verbatim;
 extern bool dhcp_running;
 
-int dhcp_cleanup(int exitthread);
-void* dhcp(void* arg);
-
 #define MAX_SERVERS 125
 #define MAX_DHCP_RANGES 125
 #define MAX_RANGE_SETS 32
@@ -441,6 +438,8 @@ struct data2 {
 };
 
 //Function Prototypes
+int dhcp_cleanup(int exitthread);
+void* dhcp(void* arg);
 char *IP2String(char *target, MYDWORD ip);
 char *IP62String(char *target, MYBYTE *source);
 char *cloneString(char *string);
@@ -504,14 +503,13 @@ void getInterfaces(data1 *network);
 void init(void *lparam);
 void loadDHCP();
 void logDebug(void *lpParam);
-void debug(const char *);
+void debugl(const char *);
 void logDHCPMess(char *logBuff, MYBYTE dhcpLogLevel);
 void mySplit(char *name, char *value, char *source, char splitChar);
 void procHTTP(data19 *req);
 void pvdata(data9 *req, data3 *op);
 void releaseLease(void *lpParam);
 void recvRepl(data9 *req);
-void *runProg(void *arg);
 void lockIP(MYDWORD ip);
 void setTempLease(data7*);
 void setLeaseExpiry(data7*);

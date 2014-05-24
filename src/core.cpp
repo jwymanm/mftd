@@ -10,6 +10,8 @@
 #include "tunnel.h"
 #include "dhcp.h"
 
+//#include <boost/thread/thread.hpp>
+
 char serviceName[] = SERVICE_NAME;
 char displayName[] = SERVICE_DISPLAY_NAME;
 
@@ -35,7 +37,7 @@ char* strsep(char** stringp, const char* delim) {
 }
 
 int debug(int cond, const char* xstr, void* data) {
-  if (strcmp(config.logging, "None") != 0) {
+  if ((config.logging) != 0) {
     string str = "DEBUG: ";
     if (xstr) str += xstr;
     switch (cond) {
@@ -61,7 +63,7 @@ void startThreads() {
   }
 #endif
 #if TUNNEL
-  if (!tunnel_alive) {
+  if (!tunnel_running) {
     pthread_create (&threads[TUNNEL_TIDX], NULL, tunnel, NULL);
   }
 #endif
@@ -75,25 +77,22 @@ void startThreads() {
 void stopThreads() {
 #if FDNS
   if (fdns_running) {
-    debug(0, "Killing fdns", NULL);
-    fdns_cleanup(fdns_sd, 0);
-    pthread_kill(threads[FDNS_TIDX], SIGINT);
+    debug(0, "Stopping fdns", NULL);
+    fdns_running = false;
     Sleep(2000);
   }
 #endif
 #if TUNNEL
-  if (tunnel_alive) {
-    debug(0, "Killing tunnel", NULL);
-    tunnel_cleanup(rc.server_socket, rc.remote_socket, 0);
-    pthread_kill(threads[TUNNEL_TIDX], SIGINT);
+  if (tunnel_running) {
+    debug(0, "Stopping tunnel", NULL);
+    tunnel_running = false;
     Sleep(2000);
   }
 #endif
 #if DHCP
   if (dhcp_running) {
-    debug(0, "Killing dhcp", NULL);
-    dhcp_cleanup(0);
-    pthread_kill(threads[DHCP_TIDX], SIGINT);
+    debug(0, "Stopping dhcp", NULL);
+    dhcp_running = false;
     Sleep(2000);
   }
 #endif
@@ -183,7 +182,7 @@ void WINAPI ServiceMain(DWORD /*argc*/, TCHAR* /*argv*/[]) {
     SetServiceStatus(serviceStatusHandle, &serviceStatus);
 
     Sleep(2000); 
-    // TODO: do for loop here to cleanup until all threads' have been cleaned
+
     WSACleanup();
 
     serviceStatus.dwControlsAccepted &= ~(SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN);
@@ -276,18 +275,21 @@ int main(int argc, char* argv[]) {
   osvi.dwOSVersionInfoSize = sizeof(osvi);
   bool result = GetVersionEx(&osvi);
   TCHAR path [ _MAX_PATH + 1 ] = "", rpath [_MAX_PATH + 1 ] = "";
+  char *fileExt;
 
   if (GetModuleFileName(0, path, sizeof(path) / sizeof(path[0])) > 0) {
     PathRemoveFileSpec(path);
     strcat(rpath, path);
     strcat(path, "\\" NAME ".ini");
-    strcat(rpath, "\\..\\" CFGDIR "\\" NAME ".ini");
-    // look for config file in same directory as binary or ../CFGDIR
+    fileExt  = strrchr(rpath, '\\');
+    *fileExt = 0;
+    strcat(rpath, "\\" CFGDIR "\\" NAME ".ini");
+    // look for config file in same directory as binary or ..\CFGDIR
     if (ini_parse(path, ini_handler, &config) < 0) {
       if (ini_parse(rpath, ini_handler, &config) < 0) {
         printf("Can't load configuration file: '" NAME ".ini'\r\nSearch paths: \r\n\t%s\r\n\t%s", path, rpath); exit(1);
-      }
-    }
+      } else config.cfgfn = rpath;
+    } else config.cfgfn = path;
   } else { exit(1); }
 
   if (result && osvi.dwPlatformId >= VER_PLATFORM_WIN32_NT) {

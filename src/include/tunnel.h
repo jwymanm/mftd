@@ -6,7 +6,7 @@
 #define TUNNEL_TIDX FDNS + MONITOR
 
 
-extern "C" bool tunnel_alive;
+extern "C" bool tunnel_running;
 extern "C" struct struct_rc rc;
 
 int tunnel_cleanup(int sd, int rsd, int exitthread);

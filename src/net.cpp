@@ -8,7 +8,7 @@
 bool adptr_exist = false;
 bool adptr_ipset = false;
 
-char adptr_ip[255];
+char  adptr_ip[255];
 DWORD adptr_idx;
 
 int setAdptrIP() {
@@ -58,7 +58,7 @@ int getAdptrInfo() {
     pAdapter = pAdapterInfo;
     while (pAdapter) {
       if (!strcmp(pAdapter->Description, config.ifname)) {
-        memcpy (adptr_ip, pAdapter->IpAddressList.IpAddress.String, strlen(pAdapter->IpAddressList.IpAddress.String)+1);
+        memcpy (adptr_ip, pAdapter->IpAddressList.IpAddress.String, strlen(pAdapter->IpAddressList.IpAddress.String) + 1);
         adptr_idx = pAdapter->Index;
         if (pAdapterInfo) FREE(pAdapterInfo);
         return true;

@@ -23,7 +23,8 @@ int ini_handler(void* cfg, const char* section, const char* name, const char* va
   } else if (MATCH("Tunnel", "rport")) {
     pconfig->rport = atoi(value);
   } else if (MATCH("Logging", "LogLevel")) {
-    pconfig->logging = strdup(value);
+    if (!strcasecmp(value, "None")) pconfig->logging = 0;
+    else pconfig->logging = atoi(value);
   } else {
     return 0;  /* unknown section/name, error */
   }
