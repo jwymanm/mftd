@@ -314,11 +314,11 @@ int main(int argc, char* argv[]) {
       }
 
       if (serviceStopped) {
-        runThreads();
+        verbatim = true; runThreads();
       } else printf("Failed to Stop Service\n");
     } else { runService(); }
     } else if (argc == 1 || lstrcmpi(argv[1], TEXT("-v")) == 0) {
-      runThreads();
+      verbatim = true; runThreads();
   } else printf("This option is not available on Windows95/98/ME\n");
   return 0; 
 }
