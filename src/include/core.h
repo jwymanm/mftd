@@ -30,7 +30,7 @@
 #define DEBUG_ADPTR 2
 #define DEBUG_SE 10
 
-#define THREAD_TO 10000
+#define THREAD_TO 5000
 #define THREADCOUNT MONITOR + FDNS + TUNNEL + DHCP
 
 using namespace std;

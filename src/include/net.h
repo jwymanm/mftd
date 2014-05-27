@@ -22,4 +22,3 @@ int setAdptrIP();
 void storeA();
 void printIFAddr();
 bool getAdapterData();
-bool getMacAddress(unsigned char* mac, const char* ip);

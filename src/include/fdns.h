@@ -1,7 +1,6 @@
 #if FDNS
 
 #define FDNS_TIDX MONITOR
-
 #define DNSPORT 53
 #define DNSMSG_SIZE 512
 

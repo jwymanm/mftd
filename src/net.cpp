@@ -60,28 +60,6 @@ void printIFAddr() {
   }
 }
 
-bool getMacAddress(unsigned char *mac , const char *ip) {
-
-  IPAddr srcip = 0;
-  ULONG macAddr[2];
-  ULONG phyAddrLen = 6;  /* default to length of six bytes */
-  int i;
-  struct in_addr destip;
-
-  destip.s_addr = inet_addr(ip);
-  //memset(&mac, 0xff, sizeof (mac));
-
-  DWORD ret = SendARP((IPAddr) destip.S_un.S_addr, srcip, macAddr, &phyAddrLen);
-
-  if (phyAddrLen) {
-    BYTE *bMacAddr = (BYTE *) & macAddr;
-    for (i = 0; i < (int) phyAddrLen; i++) { mac[i] = (char)bMacAddr[i]; }
-  }
-
-  if (ret == NO_ERROR) return true;
-  else return false;
-}
-
 // stores wchar into pchar
 void storeA(PCHAR dest, PWCHAR src) {
   int srclen = wcslen(src);

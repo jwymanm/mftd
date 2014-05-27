@@ -111,11 +111,10 @@ void runThreads() {
   } else {
 #endif
     if (getAdapterData()) {
-      if (adptr.exist) 
-        if (!adptr.ipset) {
-          debug(0, "Setting adapter ip..", NULL);
-          setAdptrIP();
-        } else startThreads();
+      if (!adptr.ipset) {
+        debug(0, "Setting adapter ip..", NULL);
+        setAdptrIP();
+      } else startThreads();
     } else {
       debug(0, "Looking for adapter: ", (void *) config.ifname);
       stopThreads();

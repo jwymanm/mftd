@@ -10,8 +10,8 @@
 #include "monitor.h"
 
 bool monitor_running = false;
-bool foundmac = false;
-unsigned char monmac[6];
+
+Monitor mon;
 
 void startMonitor() {
   pthread_create(&threads[MONITOR_TIDX], NULL, monitor, NULL);
@@ -51,7 +51,7 @@ void *monitor(void *arg) {
     // record date of not found
     } else {
 
-      foundmac = false;
+      mon.macfound = false;
 
     }
 
@@ -73,16 +73,18 @@ void monitorLoop() {
       setAdptrIP();
     } else {
       startThreads();
-      if (!foundmac) {
+      if (!mon.macfound) {
+  	int macerr;
         debug(0, "Monitor: Looking for mac on ip: ", (void *) config.monip);
-        const char *testip = "192.168.200.2";
-        getMacAddress(monmac, testip);
-        int i=0, j=0; for (; i < sizeof(monmac); i++) { if (monmac[i] != 0x00) j++; }
-        if (j) foundmac = true;
-        else debug(0,"\r\nMonitor: unknown/zeroed mac address for ip ", (void *) config.monip);
+        if ((macerr=getMacAddress(mon.mac, config.monip)) == NO_ERROR) {
+          mon.macfound = true;
+        } else { 
+          debug(0,"\r\nMonitor: error obtaining mac from ", (void *) config.monip);
+          debug(0,"Monitor: error code ", (void *) macerr);
+        }
       } else {
         printf("\r\nDEBUG: Monitor: %s has mac address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\r\n",
-          config.monip,monmac[0],monmac[1],monmac[2],monmac[3],monmac[4],monmac[5]);
+          config.monip,mon.mac[0],mon.mac[1],mon.mac[2],mon.mac[3],mon.mac[4],mon.mac[5]);
       }
     }
   } else {

@@ -2,9 +2,6 @@
 
 #define DHCP_TIDX FDNS + MONITOR + TUNNEL
 
-extern bool verbatim;
-extern bool dhcp_running;
-
 #define MAX_SERVERS 125
 #define MAX_DHCP_RANGES 125
 #define MAX_RANGE_SETS 32
@@ -20,58 +17,6 @@ extern bool dhcp_running;
 #else
 #define MAX_NATURAL_ALIGNMENT sizeof(DWORD)
 #endif
-
-// cache
-struct data7 { 
-  char *mapname;
-  time_t expiry;
-  union {
-    struct {
-      MYBYTE reserved;
-      MYBYTE dataType;
-      MYBYTE sockInd;
-      MYBYTE dnsIndex;
-    };
-    struct {
-      unsigned fixed: 1;
-      unsigned local: 1;
-      unsigned display: 1;
-      unsigned reserved1: 5;
-      char rangeInd;
-      MYWORD dhcpInd;
-    };
-  };
-  union {
-   int bytes;
-   MYDWORD ip;
-  };
-  union {
-    SOCKADDR_IN *addr;
-    MYBYTE *options;
-  };
-  union {
-    MYBYTE *response;
-    char *hostname;
-    char *query;
-  };
-  MYBYTE data;
-};
-
-// lump
-struct data71 {
-  char *mapname;
-  MYBYTE *response;
-  char *hostname;
-  char *query;
-  SOCKADDR_IN *addr;
-  MYBYTE *options;
-  MYWORD optionSize;
-  int bytes;
-  MYBYTE dataType;
-};
-
-typedef map<string, data7*> dhcpMap;
-typedef multimap<time_t, data7*> expiryMap;
 
 #define BOOTP_REQUEST  1
 #define BOOTP_REPLY    2
@@ -211,6 +156,60 @@ typedef multimap<time_t, data7*> expiryMap;
 
 #define VM_STANFORD  0x5354414EUL
 #define VM_RFC1048   0x63825363UL
+
+// data structures
+
+// cache
+struct data7 { 
+  char *mapname;
+  time_t expiry;
+  union {
+    struct {
+      MYBYTE reserved;
+      MYBYTE dataType;
+      MYBYTE sockInd;
+      MYBYTE dnsIndex;
+    };
+    struct {
+      unsigned fixed: 1;
+      unsigned local: 1;
+      unsigned display: 1;
+      unsigned reserved1: 5;
+      char rangeInd;
+      MYWORD dhcpInd;
+    };
+  };
+  union {
+   int bytes;
+   MYDWORD ip;
+  };
+  union {
+    SOCKADDR_IN *addr;
+    MYBYTE *options;
+  };
+  union {
+    MYBYTE *response;
+    char *hostname;
+    char *query;
+  };
+  MYBYTE data;
+};
+
+// lump
+struct data71 {
+  char *mapname;
+  MYBYTE *response;
+  char *hostname;
+  char *query;
+  SOCKADDR_IN *addr;
+  MYBYTE *options;
+  MYWORD optionSize;
+  int bytes;
+  MYBYTE dataType;
+};
+
+typedef map<string, data7*> dhcpMap;
+typedef multimap<time_t, data7*> expiryMap;
 
 struct data3 {
   MYBYTE opt_code;
@@ -420,6 +419,9 @@ struct data2 {
   MYBYTE dhcpLogLevel;
   bool hasFilter;
 };
+
+extern bool verbatim;
+extern bool dhcp_running;
 
 //Function Prototypes
 int dhcp_cleanup(int exitthread);

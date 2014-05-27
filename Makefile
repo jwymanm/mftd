@@ -69,7 +69,7 @@ CFLAGS  = -I$(SRCDIR)/include -DNAME=\""$(NAME)"\" -DSERVICE_NAME=\"$(SERVICE_NA
 LDFLAGS = -static -lwsock32 -liphlpapi -lws2_32 -lpthread -lshlwapi
 
 ifeq ($(MONITOR),1)
-OBJS   += monitor/main.o
+OBJS   += monitor/main.o monitor/net.o
 endif
 
 NAMES   = $(patsubst %, $(BUILDDIR)/%, $(NAME))
@@ -81,13 +81,13 @@ all: prep compile install
 	$(CC) $(CFLAGS) -c -o $(BUILDDIR)/$@ $<
 
 prep:
-	$(MKDIR) $(BUILDDIR)
 ifeq ($(MONITOR),1)
 	$(MKDIR) $(BUILDDIR)/monitor
+else
+	$(MKDIR) $(BUILDDIR)
 endif
 
 compile: $(OBJS)
-	@echo $(CC)
 	$(LD) -o $(NAMES) $(OBJSS) $(LDFLAGS)
 
 install: compile
@@ -97,14 +97,14 @@ install: compile
 	$(STRIP) $(BINDIR)/$(NAME)
 
 uninstall:
-	$(RM) $(BINDIR)/$(NAME)
+	-$(RM) $(BINDIR)/$(NAME)
 
 clean:
-	$(RM) $(OBJSS) $(NAMES) $(BINDIR)/*.htm $(BINDIR)/*.state $(CFGDIR)/*.htm $(CFGDIR)/*.state *~
+	-$(RM) $(OBJSS) $(NAMES) $(BINDIR)/*.htm $(BINDIR)/*.state $(CFGDIR)/*.htm $(CFGDIR)/*.state *~
 
 mrclean: clean uninstall
-	$(RMDIR) $(BINDIR)
-	$(RMDIR) $(BUILDDIR)
+	-$(RMDIR) $(BINDIR)
 ifeq ($(MONITOR),1)
-	$(RMDIR) $(BUILDDIR)/monitor
+	-$(RMDIR) $(BUILDDIR)/monitor
 endif
+	-$(RMDIR) $(BUILDDIR)

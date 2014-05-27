@@ -36,7 +36,7 @@ void *fdns(void *arg) {
     fdns_running = false;
     pthread_exit(NULL);
   } else {
-    debug(0, "FDNS: Status: ", (void *) wsaData.szSystemStatus);
+    debug(0, "\r\nFDNS: Status: ", (void *) wsaData.szSystemStatus);
   }
 
   fdns_sd = socket(AF_INET, SOCK_DGRAM, 0);
