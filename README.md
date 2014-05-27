@@ -20,17 +20,17 @@ Use
 
   run without installing service
 
-    *mftd -v*
+    mftd -v
 
 
   install service
 
-    *mftd -i*
+    mftd -i
 
 
   uninstall service
 
-    *mftd -u*
+    mftd -u
 
 
 Configuration
