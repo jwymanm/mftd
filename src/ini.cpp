@@ -1,21 +1,28 @@
 #include "core.h"
 #include "ini.h"
 
-#define MAX_SECTION 50
-#define MAX_NAME 50
-
 int ini_handler(void* cfg, const char* section, const char* name, const char* value) {
   configuration* pconfig = (configuration*)cfg;
-  if (MATCH("Adapter", "name")) {
+  if (MATCH("Services", "Monitor")) {
+    pconfig->monitor = atoi(value);
+  } else if (MATCH("Services", "FDNS")) {
+    pconfig->fdns = atoi(value);
+  } else if (MATCH("Services", "Tunnel")) {
+    pconfig->tunnel = atoi(value);
+  } else if (MATCH("Services", "DHCP")) {
+    pconfig->dhcp = atoi(value);
+  } else if (MATCH("Adapter", "name")) {
     pconfig->ifname = strdup(value);
   } else if (MATCH("Adapter", "ip")) {
     pconfig->adptrip = strdup(value);
   } else if (MATCH("Adapter", "mask")) {
     pconfig->netmask = strdup(value);
+  } else if (MATCH("Adapter", "static")) {
+    pconfig->setstatic = atoi(value);
   } else if (MATCH("Monitor", "ip")) {
     pconfig->monip = strdup(value);
-  } else if (MATCH("DNS", "ip")) {
-    pconfig->dnsipaddr = strdup(value);
+  } else if (MATCH("FDNS", "ip")) {
+    pconfig->fdnsip = strdup(value);
   } else if (MATCH("Tunnel", "host")) {
     pconfig->host = strdup(value);
   } else if (MATCH("Tunnel", "lport")) {

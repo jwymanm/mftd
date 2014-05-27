@@ -1,5 +1,5 @@
 /*
- core data and routines
+  core data and routines
 */
 
 #include "core.h"
@@ -9,8 +9,6 @@
 #include "fdns.h"
 #include "tunnel.h"
 #include "dhcp.h"
-
-//#include <boost/thread/thread.hpp>
 
 char serviceName[] = SERVICE_NAME;
 char displayName[] = SERVICE_DISPLAY_NAME;
@@ -56,19 +54,21 @@ int debug(int cond, const char* xstr, void* data) {
   }
 }
 
+/* threads */
+
 void startThreads() {
 #if FDNS
-  if (!fdns_running) {
+  if (!fdns_running && config.fdns) {
     pthread_create (&threads[FDNS_TIDX], NULL, fdns, NULL);
   }
 #endif
 #if TUNNEL
-  if (!tunnel_running) {
+  if (!tunnel_running && config.tunnel) {
     pthread_create (&threads[TUNNEL_TIDX], NULL, tunnel, NULL);
   }
 #endif
 #if DHCP
-  if (!dhcp_running) {
+  if (!dhcp_running && config.dhcp) {
     pthread_create (&threads[DHCP_TIDX], NULL, dhcp, NULL);
   } 
 #endif
@@ -76,46 +76,56 @@ void startThreads() {
 
 void stopThreads() {
 #if FDNS
-  if (fdns_running) {
+  if (fdns_running && config.fdns) {
     debug(0, "Stopping fdns", NULL);
     fdns_running = false;
-    Sleep(2000);
+    fdns_cleanup(fdns_sd, 0);
+    Sleep(1000);
   }
 #endif
 #if TUNNEL
-  if (tunnel_running) {
+  if (tunnel_running && config.tunnel) {
     debug(0, "Stopping tunnel", NULL);
     tunnel_running = false;
-    Sleep(2000);
+    Sleep(1000);
   }
 #endif
 #if DHCP
-  if (dhcp_running) {
+  if (dhcp_running && config.dhcp) {
     debug(0, "Stopping dhcp", NULL);
     dhcp_running = false;
-    Sleep(2000);
+    Sleep(1000);
   }
 #endif
+  Sleep(2000);
 }
 
 void runThreads() {
 #if MONITOR
-  startMonitor();
-  while (1) { monitorLoop(); };
-#else
-  // if not monitoring then just attempt to set adapter ip if/once it is available and then run threads
-  // mostly useful for running to provide simple services on an as-needed basis TODO: add DHCP only flag?
-  if (getAdaptrInfo() && !adptr_exist) {
-    adptr_exist = true;
-    Sleep(5000);
-    if (strcmp(adptr_ip, config.adptrip) != 0) {
-      setAdptrIP();
-      Sleep(3000);
+  if (config.monitor) {
+    if (!monitor_running) {
+      startMonitor();
+      Sleep(2000);
     }
-    startThreads();
+    while (monitor_running) { monitorLoop(); };
+  } else {
+#endif
+    if (getAdapterData()) {
+      if (adptr.exist) 
+        if (!adptr.ipset) {
+          debug(0, "Setting adapter ip..", NULL);
+          setAdptrIP();
+        } else startThreads();
+    } else {
+      debug(0, "Looking for adapter: ", (void *) config.ifname);
+      stopThreads();
+    }
+#if MONITOR
   }
 #endif
 }
+
+/* service code */
 
 void WINAPI ServiceControlHandler(DWORD controlCode) {
 
@@ -163,17 +173,20 @@ void WINAPI ServiceMain(DWORD /*argc*/, TCHAR* /*argv*/[]) {
     SetServiceStatus(serviceStatusHandle, &serviceStatus);
 
 #if MONITOR
-    startMonitor();
-    do { monitorLoop(); }
+    if (config.monitor) {
+      startMonitor(); do { monitorLoop(); } while (WaitForSingleObject(stopServiceEvent, 0) == WAIT_TIMEOUT);
+    } else {
 #else 
-    do { runThreads(); Sleep(10000); }
+      do { runThreads(); Sleep(THREAD_TO); } while (WaitForSingleObject(stopServiceEvent, 0) == WAIT_TIMEOUT);
 #endif
-    while (WaitForSingleObject(stopServiceEvent, 0) == WAIT_TIMEOUT);
+#if MONITOR
+    }
+#endif
 
     stopThreads();
 
 #if MONITOR
-    stopMonitor();
+    if (config.monitor) stopMonitor();
 #endif
 
     serviceStatus.dwCurrentState = SERVICE_STOP_PENDING;
@@ -183,7 +196,7 @@ void WINAPI ServiceMain(DWORD /*argc*/, TCHAR* /*argv*/[]) {
 
     Sleep(2000); 
 
-    WSACleanup();
+    netExit();
 
     serviceStatus.dwControlsAccepted &= ~(SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN);
     serviceStatus.dwCurrentState = SERVICE_STOPPED;
@@ -242,7 +255,7 @@ void installService() {
 	SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS,
 	SERVICE_AUTO_START, SERVICE_ERROR_IGNORE, path, 0, 0, 0, 0, 0);
       if (service) {
-        printf("Successfully installed.. !\n");
+        printf("Successfully installed %s as a service\n", SERVICE_NAME);
         //StartService(service, 0, NULL);
         CloseServiceHandle(service);
       } else { showError(GetLastError()); }
@@ -259,15 +272,17 @@ void uninstallService() {
       OpenService(serviceControlManager, serviceName, SERVICE_QUERY_STATUS | SERVICE_STOP | DELETE);
     if (service) {
       if (stopService(service)) {
-        if (DeleteService(service)) printf("Successfully Removed !\n");
+        if (DeleteService(service)) printf("Successfully removed %s from services\n", SERVICE_NAME);
         else showError(GetLastError());
-      } else printf("Failed to Stop Service..\n");
+      } else printf("Failed to stop service %s\n", SERVICE_NAME);
       CloseServiceHandle(service);
-    } else printf("Service Not Found..\n");
+    } else printf("Service %s not found\n", SERVICE_NAME);
     CloseServiceHandle(serviceControlManager);
   }
   return;
 }
+
+/* main execution */
 
 int main(int argc, char* argv[]) {
 
@@ -287,10 +302,12 @@ int main(int argc, char* argv[]) {
     // look for config file in same directory as binary or ..\CFGDIR
     if (ini_parse(path, ini_handler, &config) < 0) {
       if (ini_parse(rpath, ini_handler, &config) < 0) {
-        printf("Can't load configuration file: '" NAME ".ini'\r\nSearch paths: \r\n\t%s\r\n\t%s", path, rpath); exit(1);
+        printf("%s can not load configuration file: '" NAME ".ini'\r\nSearch paths: \r\n\t%s\r\n\t%s", NAME, path, rpath); exit(1);
       } else config.cfgfn = rpath;
     } else config.cfgfn = path;
   } else { exit(1); }
+
+  netInit();
 
   if (result && osvi.dwPlatformId >= VER_PLATFORM_WIN32_NT) {
 
@@ -314,11 +331,18 @@ int main(int argc, char* argv[]) {
       }
 
       if (serviceStopped) {
-        verbatim = true; runThreads();
+        verbatim = true;
+        debug (0, "Starting " NAME, NULL);
+        while (1) { runThreads(); Sleep(THREAD_TO); }
       } else printf("Failed to Stop Service\n");
     } else { runService(); }
     } else if (argc == 1 || lstrcmpi(argv[1], TEXT("-v")) == 0) {
-      verbatim = true; runThreads();
+        verbatim = true;
+        debug (0, "Starting " NAME, NULL);
+        while (1) { runThreads(); Sleep(THREAD_TO); }
   } else printf("This option is not available on Windows95/98/ME\n");
-  return 0; 
+
+  netExit();
+
+  return 0;
 }

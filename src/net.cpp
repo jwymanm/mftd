@@ -1,39 +1,185 @@
 /*
-  Misc network helper routines
+ *
+ *   Misc network helper routines
 */
 
 #include "core.h"
 #include "net.h"
 
-bool adptr_exist = false;
-bool adptr_ipset = false;
+Adapter adptr;
 
-char  adptr_ip[255];
-DWORD adptr_idx;
+int netInit() {
+
+  adptr.desc    = (LPWSTR) calloc(sizeof(wchar_t), (MAX_ADAPTER_DESCRIPTION_LENGTH + 4));
+  adptr.name    = (PCHAR) calloc(1, MAX_ADAPTER_NAME_LENGTH + 4);
+  adptr.fname   = (PCHAR) calloc(1, MAX_ADAPTER_NAME_LENGTH + 4);
+  adptr.wfname  = (PWCHAR) calloc(sizeof(wchar_t), (MAX_ADAPTER_NAME_LENGTH + 4));
+
+  int ifdesclen = MultiByteToWideChar(CP_ACP, 0, config.ifname, -1, adptr.desc, 0);
+
+  if (ifdesclen > 0)
+    MultiByteToWideChar(CP_ACP, 0, config.ifname, -1, adptr.desc, ifdesclen);
+
+  return 0;
+}
+
+int netExit() {
+
+  WSACleanup();
+
+  free (adptr.wfname);
+  free (adptr.fname);
+  free (adptr.name);
+  free (adptr.desc);
+
+}
 
 int setAdptrIP() {
   ULONG NTEContext = 0;
   ULONG NTEInstance = 0;
-  AddIPAddress(inet_addr(config.adptrip), inet_addr(config.netmask), adptr_idx, &NTEContext, &NTEInstance);
+  char* sysstr = (char*) calloc(2, MAX_ADAPTER_NAME_LENGTH + 4);
+
+  if (config.setstatic) {
+    sprintf (sysstr, "netsh interface ip set address \"%s\" static %s %s", adptr.fname, config.adptrip, config.netmask);
+    system(sysstr);
+    debug(DEBUG_IP, "Net: Adapter IP statically set to: ", (void *)config.adptrip);
+  } else {
+    sprintf (sysstr, "netsh interface ip set address \"%s\" dhcp", adptr.fname);
+    system(sysstr);
+    AddIPAddress(inet_addr(config.adptrip), inet_addr(config.netmask), adptr.idx4, &NTEContext, &NTEInstance);
+    debug(DEBUG_IP, "Net: Added ip: ", (void *)config.adptrip);
+  }
+  free (sysstr);
 }
 
-void getMacAddress(unsigned char *mac , struct in_addr destip) {
+void printIFAddr() {
+  for (int i = 0; i < adptr.phyaddrlen; i++) {
+    if (i == (adptr.phyaddrlen - 1))
+      printf("%.2X\n", adptr.phyaddr[i]);
+    else printf("%.2X-", adptr.phyaddr[i]);
+  }
+}
 
-  DWORD ret;
-  IPAddr srcip;
+bool getMacAddress(unsigned char *mac , const char *ip) {
+
+  IPAddr srcip = 0;
   ULONG macAddr[2];
   ULONG phyAddrLen = 6;  /* default to length of six bytes */
   int i;
- 
-  srcip = 0;
- 
-  ret = SendARP((IPAddr) destip.S_un.S_addr, srcip, macAddr, &phyAddrLen);
-     
+  struct in_addr destip;
+
+  destip.s_addr = inet_addr(ip);
+  //memset(&mac, 0xff, sizeof (mac));
+
+  DWORD ret = SendARP((IPAddr) destip.S_un.S_addr, srcip, macAddr, &phyAddrLen);
+
   if (phyAddrLen) {
     BYTE *bMacAddr = (BYTE *) & macAddr;
     for (i = 0; i < (int) phyAddrLen; i++) { mac[i] = (char)bMacAddr[i]; }
   }
+
+  if (ret == NO_ERROR) return true;
+  else return false;
 }
+
+// stores wchar into pchar
+void storeA(PCHAR dest, PWCHAR src) {
+  int srclen = wcslen(src);
+  LPSTR destbuf = (LPSTR) calloc(1, srclen);
+  WideCharToMultiByte(CP_ACP, 0, src, srclen, destbuf, srclen, NULL, NULL);
+  strncpy(adptr.fname, destbuf, srclen);
+  free (destbuf);
+}
+
+bool getAdapterData()  {
+
+  DWORD dwSize = 0;
+  DWORD dwRetVal = 0;
+  unsigned int i = 0;
+  char ipstr[256];
+  ULONG flags = GAA_FLAG_INCLUDE_PREFIX;
+  ULONG family = AF_UNSPEC;  // default to unspecified address family (both) (or AF_INET / AF_INET6)
+  ULONG outBufLen = WORKING_BUFFER_SIZE;
+  ULONG Iterations = 0;
+  ULONG size = 256;
+  LPVOID lpMsgBuf = NULL;
+  PIP_ADAPTER_ADDRESSES pA = NULL;
+  PIP_ADAPTER_ADDRESSES pCA = NULL;
+  PIP_ADAPTER_UNICAST_ADDRESS pUnicast = NULL;
+  PIP_ADAPTER_ANYCAST_ADDRESS pAnycast = NULL;
+  PIP_ADAPTER_MULTICAST_ADDRESS pMulticast = NULL;
+  IP_ADAPTER_DNS_SERVER_ADDRESS *pDnServer = NULL;
+  IP_ADAPTER_PREFIX *pPrefix = NULL;
+
+  adptr.exist = false;
+  adptr.ipset = false;
+
+  do {
+    pA = (IP_ADAPTER_ADDRESSES *) MALLOC(outBufLen);
+    if (pA == NULL) return false;
+    dwRetVal = GetAdaptersAddresses(family, flags, NULL, pA, &outBufLen);
+    if (dwRetVal == ERROR_BUFFER_OVERFLOW) { FREE(pA); pA = NULL; }
+    else break;
+    Iterations++;
+  } while ((dwRetVal == ERROR_BUFFER_OVERFLOW) && (Iterations < MAX_TRIES));
+
+  if (dwRetVal == NO_ERROR) {
+
+    pCA = pA;
+
+    while (pCA) {
+
+      if (wcscmp(adptr.desc, pCA->Description) != 0) { pCA = pCA->Next; continue; }
+
+      adptr.exist = true;
+      adptr.idx4 = pCA->IfIndex;
+      adptr.idx6 = pCA->Ipv6IfIndex;
+      strcpy(adptr.name, pCA->AdapterName);
+      wcscpy(adptr.wfname, pCA->FriendlyName);
+      storeA(adptr.fname, adptr.wfname);
+
+      // look for our ip address
+      pUnicast = pCA->FirstUnicastAddress;
+      if (pUnicast != NULL) {
+        for (i = 0; pUnicast != NULL; i++) { 
+          WSAAddressToStringA(pUnicast->Address.lpSockaddr, pUnicast->Address.iSockaddrLength, NULL, ipstr, &size);
+          if (strcmp(ipstr, config.adptrip) == 0) adptr.ipset = true;
+          pUnicast = pUnicast->Next;
+        }
+      }
+
+      if (pCA->PhysicalAddressLength != 0) {
+        adptr.phyaddrlen = pCA->PhysicalAddressLength;
+        memcpy(adptr.phyaddr, pCA->PhysicalAddress, adptr.phyaddrlen);
+      }
+
+      break;
+
+    }
+  } else {
+
+    if (dwRetVal == ERROR_NO_DATA)
+      debug(0, "Net: No addresses were found for the requested parameters", NULL);
+    else {
+      if (FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER |
+          FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+          NULL, dwRetVal, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+          (LPTSTR) & lpMsgBuf, 0, NULL)) {
+        debug(0, "Net error: ", (void *) lpMsgBuf);
+        LocalFree(lpMsgBuf);
+      }
+    }
+  }
+
+  if (pA) FREE(pA);
+  return adptr.exist;
+}
+
+#if 0
+
+char  adptr_ip[255];
+char  adptr_name[MAX_ADAPTER_NAME_LENGTH + 4]; 
+DWORD adptr_idx;
 
 int getAdptrInfo() {
 
@@ -45,13 +191,12 @@ int getAdptrInfo() {
   ULONG ulOutBufLen = sizeof (IP_ADAPTER_INFO);
   pAdapterInfo = (IP_ADAPTER_INFO *) MALLOC(sizeof (IP_ADAPTER_INFO));
 
-  if (pAdapterInfo == NULL) { return -1; }
-    // Make an initial call to GetAdaptersInfo to get
-    // the necessary size into the ulOutBufLen variable
+  if (pAdapterInfo == NULL) { return false; }
+
   if (GetAdaptersInfo(pAdapterInfo, &ulOutBufLen) == ERROR_BUFFER_OVERFLOW) {
     FREE(pAdapterInfo);
     pAdapterInfo = (IP_ADAPTER_INFO *) MALLOC(ulOutBufLen);
-    if (pAdapterInfo == NULL) { return -1; }
+    if (pAdapterInfo == NULL) { return false; }
   }
 
   if ((dwRetVal = GetAdaptersInfo(pAdapterInfo, &ulOutBufLen)) == NO_ERROR) {
@@ -60,6 +205,7 @@ int getAdptrInfo() {
       if (!strcmp(pAdapter->Description, config.ifname)) {
         memcpy (adptr_ip, pAdapter->IpAddressList.IpAddress.String, strlen(pAdapter->IpAddressList.IpAddress.String) + 1);
         adptr_idx = pAdapter->Index;
+        strcpy(adptr_name, pAdapter->AdapterName);
         if (pAdapterInfo) FREE(pAdapterInfo);
         return true;
       } else { pAdapter = pAdapter->Next; }
@@ -70,198 +216,129 @@ int getAdptrInfo() {
   return false;
 }
 
-
-//
-// Extended versions kept here for referral of data structures/future use
-
-#if 0
-
 int getAdptrAddr()  {
 
-    /* Declare and initialize variables */
+  DWORD dwSize = 0;
+  DWORD dwRetVal = 0;
+  unsigned int i = 0;
+  ULONG flags = GAA_FLAG_INCLUDE_PREFIX;
+  // default to unspecified address family (both)
+  ULONG family = AF_UNSPEC;
+  LPVOID lpMsgBuf = NULL;
+  PIP_ADAPTER_ADDRESSES pAddresses = NULL;
+  ULONG outBufLen = 0;
+  ULONG Iterations = 0;
+  PIP_ADAPTER_ADDRESSES pCurrAddresses = NULL;
+  PIP_ADAPTER_UNICAST_ADDRESS pUnicast = NULL;
+  PIP_ADAPTER_ANYCAST_ADDRESS pAnycast = NULL;
+  PIP_ADAPTER_MULTICAST_ADDRESS pMulticast = NULL;
+  IP_ADAPTER_DNS_SERVER_ADDRESS *pDnServer = NULL;
+  IP_ADAPTER_PREFIX *pPrefix = NULL;
 
-    DWORD dwSize = 0;
-    DWORD dwRetVal = 0;
+  //family = AF_INET;
+  //family = AF_INET6;
 
-    unsigned int i = 0;
+  outBufLen = WORKING_BUFFER_SIZE;
 
-    // Set the flags to pass to GetAdaptersAddresses
-    ULONG flags = GAA_FLAG_INCLUDE_PREFIX;
+  do {
 
-    // default to unspecified address family (both)
-    ULONG family = AF_UNSPEC;
+    pAddresses = (IP_ADAPTER_ADDRESSES *) MALLOC(outBufLen);
+    if (pAddresses == NULL) return 0;
 
-    LPVOID lpMsgBuf = NULL;
+    dwRetVal = GetAdaptersAddresses(family, flags, NULL, pAddresses, &outBufLen);
 
-    PIP_ADAPTER_ADDRESSES pAddresses = NULL;
-    ULONG outBufLen = 0;
-    ULONG Iterations = 0;
+    if (dwRetVal == ERROR_BUFFER_OVERFLOW) { FREE(pAddresses); pAddresses = NULL; }
+    else break;
 
-    PIP_ADAPTER_ADDRESSES pCurrAddresses = NULL;
-    PIP_ADAPTER_UNICAST_ADDRESS pUnicast = NULL;
-    PIP_ADAPTER_ANYCAST_ADDRESS pAnycast = NULL;
-    PIP_ADAPTER_MULTICAST_ADDRESS pMulticast = NULL;
-    IP_ADAPTER_DNS_SERVER_ADDRESS *pDnServer = NULL;
-    IP_ADAPTER_PREFIX *pPrefix = NULL;
+    Iterations++;
 
-  /*
-    if (argc != 2) {
-        printf(" Usage: getadapteraddresses family\n");
-        printf("        getadapteraddresses 4 (for IPv4)\n");
-        printf("        getadapteraddresses 6 (for IPv6)\n");
-        printf("        getadapteraddresses A (for both IPv4 and IPv6)\n");
-        exit(1);
+  } while ((dwRetVal == ERROR_BUFFER_OVERFLOW) && (Iterations < MAX_TRIES));
+
+  if (dwRetVal == NO_ERROR) {
+
+    pCurrAddresses = pAddresses;
+
+    while (pCurrAddresses) {
+
+      printf("\tLength of the IP_ADAPTER_ADDRESS struct: %ld\n", pCurrAddresses->Length);
+      printf("\tIfIndex (IPv4 interface): %u\n", pCurrAddresses->IfIndex);
+      printf("\tAdapter name: %s\n", pCurrAddresses->AdapterName);
+
+      pUnicast = pCurrAddresses->FirstUnicastAddress;
+      if (pUnicast != NULL) {
+        for (i = 0; pUnicast != NULL; i++) pUnicast = pUnicast->Next;
+        printf("\tNumber of Unicast Addresses: %d\n", i);
+      } else printf("\tNo Unicast Addresses\n");
+
+      pAnycast = pCurrAddresses->FirstAnycastAddress;
+      if (pAnycast) {
+        for (i = 0; pAnycast != NULL; i++) pAnycast = pAnycast->Next;
+        printf("\tNumber of Anycast Addresses: %d\n", i);
+      } else printf("\tNo Anycast Addresses\n");
+
+      pMulticast = pCurrAddresses->FirstMulticastAddress;
+      if (pMulticast) {
+        for (i = 0; pMulticast != NULL; i++) pMulticast = pMulticast->Next;
+        printf("\tNumber of Multicast Addresses: %d\n", i);
+      } else printf("\tNo Multicast Addresses\n");
+
+      pDnServer = pCurrAddresses->FirstDnsServerAddress;
+      if (pDnServer) {
+        for (i = 0; pDnServer != NULL; i++) pDnServer = pDnServer->Next;
+        printf("\tNumber of DNS Server Addresses: %d\n", i);
+      } else printf("\tNo DNS Server Addresses\n");
+
+      printf("\tDNS Suffix: %wS\n", pCurrAddresses->DnsSuffix);
+      printf("\tDescription: %wS\n", pCurrAddresses->Description);
+      printf("\tFriendly name: %wS\n", pCurrAddresses->FriendlyName);
+
+      if (pCurrAddresses->PhysicalAddressLength != 0) {
+        printf("\tPhysical address: ");
+        for (i = 0; i < (int) pCurrAddresses->PhysicalAddressLength; i++) {
+          if (i == (pCurrAddresses->PhysicalAddressLength - 1))
+            printf("%.2X\n", (int) pCurrAddresses->PhysicalAddress[i]);
+          else printf("%.2X-", (int) pCurrAddresses->PhysicalAddress[i]);
+        }
+      }
+      printf("\tFlags: %ld\n", pCurrAddresses->Flags);
+      printf("\tMtu: %lu\n", pCurrAddresses->Mtu);
+      printf("\tIfType: %ld\n", pCurrAddresses->IfType);
+      printf("\tOperStatus: %ld\n", pCurrAddresses->OperStatus);
+      printf("\tIpv6IfIndex (IPv6 interface): %u\n", pCurrAddresses->Ipv6IfIndex);
+      printf("\tZoneIndices (hex): ");
+      for (i = 0; i < 16; i++) printf("%lx ", pCurrAddresses->ZoneIndices[i]); printf("\n");
+
+      // printf("\tTransmit link speed: %I64u\n", pCurrAddresses->TransmitLinkSpeed);
+      //printf("\tReceive link speed: %I64u\n", pCurrAddresses->ReceiveLinkSpeed);
+
+      pPrefix = pCurrAddresses->FirstPrefix;
+      if (pPrefix) {
+        for (i = 0; pPrefix != NULL; i++) pPrefix = pPrefix->Next;
+        printf("\tNumber of IP Adapter Prefix entries: %d\n", i);
+      } else printf("\tNumber of IP Adapter Prefix entries: 0\n");
+
+      printf("\n");
+
+      pCurrAddresses = pCurrAddresses->Next;
     }
-    */
-
-//    if (atoi(argv[1]) == 4)
-        family = AF_INET;
- //   else if (atoi(argv[1]) == 6)
-  //      family = AF_INET6;
-
-    printf("Calling GetAdaptersAddresses function with family = ");
-    if (family == AF_INET)
-        printf("AF_INET\n");
-    if (family == AF_INET6)
-        printf("AF_INET6\n");
-    if (family == AF_UNSPEC)
-        printf("AF_UNSPEC\n\n");
-
-    // Allocate a 15 KB buffer to start with.
-    outBufLen = WORKING_BUFFER_SIZE;
-
-    do {
-
-        pAddresses = (IP_ADAPTER_ADDRESSES *) MALLOC(outBufLen);
-        if (pAddresses == NULL) {
-            printf
-                ("Memory allocation failed for IP_ADAPTER_ADDRESSES struct\n");
-            exit(1);
-        }
-
-        dwRetVal =
-            GetAdaptersAddresses(family, flags, NULL, pAddresses, &outBufLen);
-
-        if (dwRetVal == ERROR_BUFFER_OVERFLOW) {
-            FREE(pAddresses);
-            pAddresses = NULL;
-        } else {
-            break;
-        }
-
-        Iterations++;
-
-    } while ((dwRetVal == ERROR_BUFFER_OVERFLOW) && (Iterations < MAX_TRIES));
-
-    if (dwRetVal == NO_ERROR) {
-        // If successful, output some information from the data we received
-        pCurrAddresses = pAddresses;
-        while (pCurrAddresses) {
-            printf("\tLength of the IP_ADAPTER_ADDRESS struct: %ld\n",
-                   pCurrAddresses->Length);
-            printf("\tIfIndex (IPv4 interface): %u\n", pCurrAddresses->IfIndex);
-            printf("\tAdapter name: %s\n", pCurrAddresses->AdapterName);
-
-            pUnicast = pCurrAddresses->FirstUnicastAddress;
-            if (pUnicast != NULL) {
-                for (i = 0; pUnicast != NULL; i++)
-                    pUnicast = pUnicast->Next;
-                printf("\tNumber of Unicast Addresses: %d\n", i);
-            } else
-                printf("\tNo Unicast Addresses\n");
-
-            pAnycast = pCurrAddresses->FirstAnycastAddress;
-            if (pAnycast) {
-                for (i = 0; pAnycast != NULL; i++)
-                    pAnycast = pAnycast->Next;
-                printf("\tNumber of Anycast Addresses: %d\n", i);
-            } else
-                printf("\tNo Anycast Addresses\n");
-
-            pMulticast = pCurrAddresses->FirstMulticastAddress;
-            if (pMulticast) {
-                for (i = 0; pMulticast != NULL; i++)
-                    pMulticast = pMulticast->Next;
-                printf("\tNumber of Multicast Addresses: %d\n", i);
-            } else
-                printf("\tNo Multicast Addresses\n");
-
-            pDnServer = pCurrAddresses->FirstDnsServerAddress;
-            if (pDnServer) {
-                for (i = 0; pDnServer != NULL; i++)
-                    pDnServer = pDnServer->Next;
-                printf("\tNumber of DNS Server Addresses: %d\n", i);
-            } else
-                printf("\tNo DNS Server Addresses\n");
-
-            printf("\tDNS Suffix: %wS\n", pCurrAddresses->DnsSuffix);
-            printf("\tDescription: %wS\n", pCurrAddresses->Description);
-            printf("\tFriendly name: %wS\n", pCurrAddresses->FriendlyName);
-
-            if (pCurrAddresses->PhysicalAddressLength != 0) {
-                printf("\tPhysical address: ");
-                for (i = 0; i < (int) pCurrAddresses->PhysicalAddressLength;
-                     i++) {
-                    if (i == (pCurrAddresses->PhysicalAddressLength - 1))
-                        printf("%.2X\n",
-                               (int) pCurrAddresses->PhysicalAddress[i]);
-                    else
-                        printf("%.2X-",
-                               (int) pCurrAddresses->PhysicalAddress[i]);
-                }
-            }
-            printf("\tFlags: %ld\n", pCurrAddresses->Flags);
-            printf("\tMtu: %lu\n", pCurrAddresses->Mtu);
-            printf("\tIfType: %ld\n", pCurrAddresses->IfType);
-            printf("\tOperStatus: %ld\n", pCurrAddresses->OperStatus);
-            printf("\tIpv6IfIndex (IPv6 interface): %u\n",
-                   pCurrAddresses->Ipv6IfIndex);
-            printf("\tZoneIndices (hex): ");
-            for (i = 0; i < 16; i++)
-                printf("%lx ", pCurrAddresses->ZoneIndices[i]);
-            printf("\n");
-
-           // printf("\tTransmit link speed: %I64u\n", pCurrAddresses->TransmitLinkSpeed);
-            //printf("\tReceive link speed: %I64u\n", pCurrAddresses->ReceiveLinkSpeed);
-
-            pPrefix = pCurrAddresses->FirstPrefix;
-            if (pPrefix) {
-                for (i = 0; pPrefix != NULL; i++)
-                    pPrefix = pPrefix->Next;
-                printf("\tNumber of IP Adapter Prefix entries: %d\n", i);
-            } else
-                printf("\tNumber of IP Adapter Prefix entries: 0\n");
-
-            printf("\n");
-
-            pCurrAddresses = pCurrAddresses->Next;
-        }
-    } else {
-        printf("Call to GetAdaptersAddresses failed with error: %d\n",
-               dwRetVal);
-        if (dwRetVal == ERROR_NO_DATA)
-            printf("\tNo addresses were found for the requested parameters\n");
-        else {
-
-            if (FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER |
-                    FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-                    NULL, dwRetVal, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-                    // Default language
-                    (LPTSTR) & lpMsgBuf, 0, NULL)) {
-                printf("\tError: %s", lpMsgBuf);
-                LocalFree(lpMsgBuf);
-                if (pAddresses)
-                    FREE(pAddresses);
-                exit(1);
-            }
-        }
+  } else {
+    if (dwRetVal == ERROR_NO_DATA)
+      debug(0, "Net: No addresses were found for the requested parameters", NULL);
+    else {
+      if (FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER |
+          FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+          NULL, dwRetVal, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+          (LPTSTR) & lpMsgBuf, 0, NULL)) {
+        printf("\tError: %s", lpMsgBuf);
+        LocalFree(lpMsgBuf);
+        if (pAddresses) FREE(pAddresses);
+        return 0;
+      }
     }
+  }
 
-    if (pAddresses) {
-        FREE(pAddresses);
-    }
-
-    return 0;
+  if (pAddresses) FREE(pAddresses);
+  return 0;
 }
 
 int lkupIF() {

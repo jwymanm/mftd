@@ -34,24 +34,35 @@ Most configuration options are included in the default configuration file mftd.i
 Directory Layout
 ----------------
 
-bin/ -> mftd.exe
+bin/
 
+  mftd.exe 
+
+    main executable
+  
 
 etc/
 
   mftd.ini
 
-  mftd will check for its configuration file in the same directory it is run from and then in ../etc
+    mftd will check for its configuration file in the same directory it is run from and then in ../etc
+
 
   mftd.state
 
-  dhcp lease information stored in same directory as config
-
-  mftd.url
-
-  shortcut file auto generated pointing to web address of http server
+    dhcp lease information stored in same directory as binary or config
 
 
-log/ -> log files
+  mftd.htm
+
+    http data for refreshing lease page stored in the same directory as binary or config
+
+
+log/ 
 
   logging is done automatically in a directory called log wherever the config file is found
+
+
+tmp/
+
+  the make process stores built objects in tmp/build and the monitor module utilizes the tmp directory for storage 

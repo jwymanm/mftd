@@ -22,7 +22,7 @@ char iniFile[_MAX_PATH];
 char logFile[_MAX_PATH];
 char leaFile[_MAX_PATH];
 char htmFile[_MAX_PATH];
-char lnkFile[_MAX_PATH];
+//char lnkFile[_MAX_PATH];
 char cliFile[_MAX_PATH];
 char filePATH[_MAX_PATH];
 char cfilePATH[_MAX_PATH];
@@ -175,15 +175,15 @@ int dhcp_cleanup(int exitthread) {
   logDHCPMess(logBuff, 1);
   closeConn();
   if (cfig.replication && cfig.dhcpReplConn.ready) closesocket(cfig.dhcpReplConn.sock);
-  dhcp_running = false;
-  WSACleanup();
-  Sleep(1000);
-  sprintf(logBuff, "DHCP stopped");
-  logDHCPMess(logBuff, 1);
   if (exitthread) { 
-    CloseHandle(fEvent); CloseHandle(lEvent); pthread_exit(NULL);
-  }
-  else return 0;
+    dhcp_running = false;
+    WSACleanup();
+    Sleep(1000);
+    sprintf(logBuff, "DHCP stopped");
+    logDHCPMess(logBuff, 1);
+    CloseHandle(fEvent); CloseHandle(lEvent);
+    pthread_exit(NULL);
+  } else return 0;
 }
 
 void* dhcp(void *arg) {
@@ -2097,7 +2097,6 @@ FILE *openSection(const char *sectionName, MYBYTE serial) {
   f = fopen(iniFile, "rt");
 
   if (f) {
-    //printf("opened %s=%d\n", tempbuff, f);
     char buff[512];
     MYBYTE found = 0;
 
@@ -2567,7 +2566,7 @@ void __cdecl init(void *lpParam) {
   // store the following adjacent to config..
 
   sprintf(iniFile, "%s.ini", cfilePATH);
-  sprintf(lnkFile, "%s.url", cfilePATH);
+  //sprintf(lnkFile, "%s.url", cfilePATH);
   sprintf(htmFile, "%s.htm", cfilePATH);
   sprintf(leaFile, "%s.state", cfilePATH);
 
@@ -2586,7 +2585,7 @@ void __cdecl init(void *lpParam) {
     fileExt = strrchr(filePATH, '\\');
     *fileExt = 0;
     sprintf(logFile, "%s\\%s-%%Y%%m%%d.log", filePATH, NAME);
-    sprintf(cliFile, "%s\\%%s.log", filePATH);
+    sprintf(cliFile, "%s\\%s-%%s.log", filePATH, NAME);
   }
 
   cfig.dhcpLogLevel = config.logging;
@@ -2637,11 +2636,11 @@ void __cdecl init(void *lpParam) {
 
   if (fEvent == NULL) {
     printf("CreateEvent error: %d\n", GetLastError());
-    exit(-1);
+    dhcp_cleanup(1);
   } else if ( GetLastError() == ERROR_ALREADY_EXISTS ) {
     sprintf(logBuff, "CreateEvent opened an existing Event\nServer May already be Running");
     logDHCPMess(logBuff, 0);
-    exit(-1);
+    dhcp_cleanup(1);
   }
   //SetEvent(fEvent);
 
@@ -2653,11 +2652,11 @@ void __cdecl init(void *lpParam) {
 
   if (lEvent == NULL) {
     printf("CreateEvent error: %d\n", GetLastError());
-    exit(-1);
+    dhcp_cleanup(1);
   } else if ( GetLastError() == ERROR_ALREADY_EXISTS ) {
     sprintf(logBuff, "CreateEvent opened an existing Event\nServer May already be Running");
     logDHCPMess(logBuff, 0);
-    exit(-1);
+    dhcp_cleanup(1);
   }
 
   getInterfaces(&network);
@@ -3183,6 +3182,8 @@ MYWORD gdmess(data9 *req, MYBYTE sockInd) {
   memset(req->vp, 0, sizeof(dhcp_packet) - sizeof(dhcp_header));
   return 1;
 }
+
+// TODO: move both of these to core instead so all modules can use them
 
 void debugl(const char *mess) {
   char t[254];

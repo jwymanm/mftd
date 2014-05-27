@@ -10,12 +10,13 @@ int buffer_size = 4096;
 struct struct_rc rc;
 
 int tunnel_cleanup(int sd, int rsd, int exitthread) {
-  if (sd) { shutdown(sd, 2); closesocket(sd); }
-  if (rsd) { shutdown(rsd, 2); closesocket(rsd); }
-  tunnel_running = false;
-  WSACleanup();
-  if (exitthread) pthread_exit(NULL);
-  else return 0;
+  if (sd) { shutdown(sd, 2); Sleep(1000); closesocket(sd); }
+  if (rsd) { shutdown(rsd, 2); Sleep(1000); closesocket(rsd); }
+  if (exitthread) {
+    WSACleanup();
+    tunnel_running = false;
+    pthread_exit(NULL);
+  } else return 0;
 }
 
 void* tunnel(void* arg) {
@@ -26,12 +27,13 @@ void* tunnel(void* arg) {
 
   if (WSAStartup(MAKEWORD(1, 1), &info) != 0) {
     debug(0, "Tunnel: WSAStartup()", NULL);
-    tunnel_cleanup(0,0,1);
+    tunnel_running = false;
+    pthread_exit(NULL);
   }
 
   if (build_server() == 1) { tunnel_cleanup(0,0,1); }
 
-  debug(0, "Tunnel Status: Running", NULL);
+  debug(0, "Tunnel: Status: Running", NULL);
 
   while (tunnel_running)
   { if (wait_for_clients() == 0) if (build_tunnel() == 0) use_tunnel(); }
@@ -91,7 +93,8 @@ int wait_for_clients(void) {
   }
 
   if (config.logging) {
-    printf("> %s tcptunnel: request from %s\n", get_current_timestamp(), inet_ntoa(rc.client_addr.sin_addr));
+    //printf("Tunnel: %s: request from %s\n", get_current_timestamp(), inet_ntoa(rc.client_addr.sin_addr));
+    debug(0, "Tunnel: request from ", (void *) inet_ntoa(rc.client_addr.sin_addr));
   }
 
   return 0;

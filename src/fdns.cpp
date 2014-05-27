@@ -9,11 +9,12 @@ bool fdns_running = false;
 int fdns_sd;
 
 void fdns_cleanup(int sd, int exitthread) {
-  if (sd) { shutdown(sd, 2); closesocket(sd); }
-  fdns_running = false;
-  WSACleanup();
-  if (exitthread) pthread_exit(NULL);
-  else return;
+  if (sd) { shutdown(sd, 2); Sleep(1000); closesocket(sd); }
+  if (exitthread) {
+    WSACleanup();
+    fdns_running = false;
+    pthread_exit(NULL);
+  } else return;
 }
 
 void *fdns(void *arg) {
@@ -25,25 +26,27 @@ void *fdns(void *arg) {
   struct sockaddr_in addr, server;
   WSADATA wsaData;
 
-  ip4str = strdup(config.dnsipaddr);
+  ip4str = strdup(config.fdnsip);
   for (int i=0; i < 4; i++) { ip4[i] = atoi(strsep(&ip4str, ".")); }
 
   wsaerr = WSAStartup(MAKEWORD(1, 1), &wsaData);
 
   if (wsaerr != 0) {
-    debug(0, "Winsock dll was not found!\n", NULL);
-    fdns_cleanup(0,1);
+    debug(0, "FDNS: WSAError, exiting", NULL);
+    fdns_running = false;
+    pthread_exit(NULL);
   } else {
-    debug(0, "FDNS Status: ", (void *) wsaData.szSystemStatus);
+    debug(0, "FDNS: Status: ", (void *) wsaData.szSystemStatus);
   }
 
   fdns_sd = socket(AF_INET, SOCK_DGRAM, 0);
 
   if (setsockopt(fdns_sd, SOL_SOCKET, SO_REUSEADDR, "1", sizeof(int)) == -1) {
+    printf("here!!!!!!!!\r\n");
     fdns_cleanup(fdns_sd,1);
   }
 
-  if(fdns_sd == INVALID_SOCKET) {
+  if (fdns_sd == INVALID_SOCKET) {
     wsaerr = WSAGetLastError();
     debug(DEBUG_SE, "cannot open socket, error: ", &wsaerr);
     fdns_cleanup(fdns_sd,1);
@@ -69,7 +72,9 @@ void *fdns(void *arg) {
 
   do {
     int n = recvfrom(fdns_sd, msg, DNSMSG_SIZE, flags, (struct sockaddr *) &addr, &len);
-    if (n < 0) { continue; }
+    if (n < 0) { continue; } else {
+      debug(0, "FDNS: client connected", NULL); 
+    }
     // Same Id
     msg[2]=0x81;msg[3]=0x80; // Change Opcode and flags
     msg[6]=0;msg[7]=1; // One answer
@@ -84,9 +89,9 @@ void *fdns(void *arg) {
     msg[n++]=ip4[0];msg[n++]=ip4[1];msg[n++]=ip4[2];msg[n++]=ip4[3]; // IP
     // Send the answer
     sendto(fdns_sd,msg,n,flags,(struct sockaddr *)&addr,len);
- } while (fdns_running);
+  } while (fdns_running);
 
- fdns_cleanup(fdns_sd,1);
+  fdns_cleanup(fdns_sd, 1);
 }
 
 #endif

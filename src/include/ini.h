@@ -1,6 +1,9 @@
 #ifndef __INI_H__
 #define __INI_H__
 
+#define MAX_SECTION 50
+#define MAX_NAME 50
+
 /* Make this header file easier to include in C++ code */
 #ifdef __cplusplus
 extern "C" {
