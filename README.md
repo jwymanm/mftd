@@ -18,11 +18,19 @@ To build you will need GNU make, mingw-w64 (i686 or x64 for 32/64 bit) depending
 Use
 ---
 
-mftd -v : run without installing service
+  run without installing service
 
-mftd -i : install service
+    *mftd -v*
 
-mftd -u : uninstall service
+
+  install service
+
+    *mftd -i*
+
+
+  uninstall service
+
+    *mftd -u*
 
 
 Configuration
@@ -34,35 +42,35 @@ Most configuration options are included in the default configuration file mftd.i
 Directory Layout
 ----------------
 
-bin/
+###bin/
 
-  mftd.exe 
+  *mftd.exe* 
 
-    main executable
+  main executable
   
 
-etc/
+###etc/
 
-  mftd.ini
+  *mftd.ini*
 
-    mftd will check for its configuration file in the same directory it is run from and then in ../etc
-
-
-  mftd.state
-
-    dhcp lease information stored in same directory as binary or config
+  mftd will check for its configuration file in the same directory it is run from and then in ../etc
 
 
-  mftd.htm
+  *mftd.state*
 
-    http data for refreshing lease page stored in the same directory as binary or config
+  dhcp lease information stored in same directory as binary or config
 
 
-log/ 
+  *mftd.htm*
+
+  http data for refreshing lease page stored in the same directory as binary or config
+
+
+###log/ 
 
   logging is done automatically in a directory called log wherever the config file is found
 
 
-tmp/
+###tmp/
 
   the make process stores built objects in tmp/build and the monitor module utilizes the tmp directory for storage 
