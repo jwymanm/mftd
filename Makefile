@@ -55,7 +55,7 @@ LD = i686-w64-mingw32-g++
 
 RM       = /bin/rm -f
 MKDIR    = mkdir -p
-RMDIR    = rmdir --ignore-fail-on-non-empty
+RMDIR    = rmdir -p --ignore-fail-on-non-empty
 CP       = cp
 INSTALL  = install
 STRIP    = strip
@@ -106,5 +106,6 @@ mrclean: clean uninstall
 	-$(RMDIR) $(BINDIR)
 ifeq ($(MONITOR),1)
 	-$(RMDIR) $(BUILDDIR)/monitor
-endif
+else
 	-$(RMDIR) $(BUILDDIR)
+endif
