@@ -14,3 +14,6 @@
 31-05-14 09:27:25 SourceMac=00:02:7c:00:db:88 ClientIP=192.168.200.2 SourceIP=192.168.200.2 RelayAgent=0.0.0.0
 	53	DHCPMsgType	3
 	57	DHCPMaxMsgSize	1500
+31-05-14 09:30:25 SourceMac=00:02:7c:00:db:88 ClientIP=192.168.200.2 SourceIP=192.168.200.2 RelayAgent=0.0.0.0
+	53	DHCPMsgType	3
+	57	DHCPMaxMsgSize	1500

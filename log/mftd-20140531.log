@@ -16,3 +16,5 @@
 [31-May-14 09:21:29] Host 00:02:7c:00:db:88 (Host00027c00db88) renewed 192.168.200.2 for 300 seconds
 [31-May-14 09:21:29] DHCPREQUEST for 00:02:7c:00:db:88 () from interface 192.168.200.1 received
 [31-May-14 09:21:29] Host 00:02:7c:00:db:88 (Host00027c00db88) renewed 192.168.200.2 for 300 seconds
+[31-May-14 09:21:29] DHCPREQUEST for 00:02:7c:00:db:88 () from interface 192.168.200.1 received
+[31-May-14 09:21:29] Host 00:02:7c:00:db:88 (Host00027c00db88) renewed 192.168.200.2 for 300 seconds

@@ -3,12 +3,13 @@
 #include "core.h"
 #include "tunnel.h"
 
+bool tunnel_running = false;
+
 namespace tunnel {
 
 Sockets s;
 LocalBuffers lb;
 
-bool tunnel_running = false;
 int buffer_size = 4096;
 
 int cleanup(int et) {
