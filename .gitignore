@@ -1,7 +1,5 @@
-*.exe
-*.o
-*.htm
-*.state
-*.url
 bin/*
+log/*
+tmp/*.htm
+tmp/*.state
 tmp/build/*

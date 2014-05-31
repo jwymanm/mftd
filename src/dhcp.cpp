@@ -2811,6 +2811,7 @@ void __cdecl init(void *lpParam) {
   return;
 }
 
+//TODO move this to make network loop
 bool detectChange() {
 
   logMesg("Calling detectChange", LOG_INFO);
