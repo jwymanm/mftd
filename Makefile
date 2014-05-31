@@ -108,7 +108,7 @@ uninstall:
 	-$(RM) $(BINDIR)/$(NAME)
 
 clean:
-	-$(RM) $(OBJSS) $(NAMES) $(BINDIR)/*.htm $(BINDIR)/*.state $(CFGDIR)/*.htm $(CFGDIR)/*.state *~
+	-$(RM) $(OBJSS) $(NAMES) $(TMPDIR)/*.htm $(TMPDIR)/*.state *~
 
 mrclean: clean uninstall
 	-$(RMDIR) $(BINDIR)
