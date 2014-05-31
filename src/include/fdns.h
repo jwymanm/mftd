@@ -5,9 +5,25 @@
 #define DNSMSG_SIZE 512
 
 extern "C" bool fdns_running;
-extern "C" int fdns_sd;
 
-void fdns_cleanup(int sd, int exitthread);
-void* fdns(void* arg);
+namespace fdns {
+
+typedef struct {
+  unsigned int server;
+  unsigned int listen;
+} Sockets;
+
+typedef struct {
+  struct sockaddr_in sa;
+  struct sockaddr_in ca;
+  char msg[DNSMSG_SIZE];
+} LocalBuffers;
+
+//extern "C" Sockets s;
+
+void cleanup(int et);
+void* main(void* arg);
+
+}
 
 #endif

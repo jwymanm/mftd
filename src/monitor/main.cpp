@@ -1,4 +1,6 @@
-/* 
+#if MONITOR
+
+/*
    monitor/main.cpp
    a recording system of how often we actually see the interface vs seeing the mac
    this tells us where any problem lies in communication
@@ -11,34 +13,32 @@
 
 bool monitor_running = false;
 
+namespace monitor {
+
 Monitor mon;
 
-void startMonitor() {
-  pthread_create(&threads[MONITOR_TIDX], NULL, monitor, NULL);
+void start() {
+  pthread_create(&threads[MONITOR_TIDX], NULL, main, NULL);
 }
 
-void stopMonitor() {
+void stop() {
   monitor_running = false;
 }
 
-int monitor_cleanup (int exitthread) {
-  if (exitthread) {
-    WSACleanup();
+int cleanup (int et) {
+  if (et) {
     pthread_exit(NULL);
   } else return 0;
 }
 
-void *monitor(void *arg) {
+// this will be wrapped around our detectchange function instead
+// since this is not foolproof
+// problems with state after ethernet cord is dropped but before adapter finds that..
+// event based will be way better
+
+void *main(void *arg) {
 
   monitor_running = true;
-
-  WSADATA wsaData;
-
-  if (WSAStartup(MAKEWORD(1,1), &wsaData) != 0) {
-     debug(0, "Monitor: WSAError", NULL);
-     monitor_running = false;
-     pthread_exit(NULL);
-  }
 
   debug(0, "Looking for adapter: ", (void *) config.ifname);
 
@@ -46,7 +46,7 @@ void *monitor(void *arg) {
 
     // record date of found
     if (getAdapterData()) {
-     
+
 
     // record date of not found
     } else {
@@ -59,11 +59,11 @@ void *monitor(void *arg) {
 
   } while (monitor_running);
 
-  monitor_cleanup(1);
+  cleanup(1);
 
 }
 
-void monitorLoop() {
+void doLoop() {
 
   Sleep(MON_TO*2);
 
@@ -78,9 +78,9 @@ void monitorLoop() {
         debug(0, "Monitor: Looking for mac on ip: ", (void *) config.monip);
         if ((macerr=getMacAddress(mon.mac, config.monip)) == NO_ERROR) {
           mon.macfound = true;
-        } else { 
+        } else {
           debug(0,"\r\nMonitor: error obtaining mac from ", (void *) config.monip);
-          debug(0,"Monitor: error code ", (void *) macerr);
+          printf("Monitor: error code %d\r\n", macerr);
         }
       } else {
         printf("\r\nDEBUG: Monitor: %s has mac address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\r\n",
@@ -93,3 +93,6 @@ void monitorLoop() {
   }
 
 }
+
+}
+#endif

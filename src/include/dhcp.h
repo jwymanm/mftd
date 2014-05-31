@@ -157,10 +157,25 @@
 #define VM_STANFORD  0x5354414EUL
 #define VM_RFC1048   0x63825363UL
 
-// data structures
+// data structures..
+
+extern bool dhcp_running;
+
+namespace dhcp {
+
+typedef struct {
+  char log[256];
+  char tmp[512];
+  char ext[512];
+  char lea[_MAX_PATH];
+  char htm[_MAX_PATH];
+  char cli[_MAX_PATH];
+  time_t t;
+  timeval tv;
+} LocalBuffers;
 
 // cache
-struct data7 { 
+struct data7 {
   char *mapname;
   time_t expiry;
   union {
@@ -208,8 +223,8 @@ struct data71 {
   MYBYTE dataType;
 };
 
-typedef map<string, data7*> dhcpMap;
-typedef multimap<time_t, data7*> expiryMap;
+typedef std::map<std::string, data7*> dhcpMap;
+typedef std::multimap<time_t, data7*> expiryMap;
 
 struct data3 {
   MYBYTE opt_code;
@@ -405,7 +420,6 @@ struct data2 {
   MYDWORD lease;
   data13 dhcpRanges[MAX_DHCP_RANGES];
   data14 rangeSet[MAX_RANGE_SETS];
-  char logFileName[_MAX_PATH];
   MYDWORD rangeStart;
   MYDWORD rangeEnd;
   MYBYTE *options;
@@ -420,15 +434,12 @@ struct data2 {
   bool hasFilter;
 };
 
-extern bool verbatim;
-extern bool dhcp_running;
-
 //Function Prototypes
-int dhcp_cleanup(int exitthread);
-void* dhcp(void* arg);
+void* main(void* arg);
+void init(void *lparam);
+int  cleanup(int et);
 char *IP2String(char *target, MYDWORD ip);
 char *IP62String(char *target, MYBYTE *source);
-char *cloneString(char *string);
 char *getHexValue(MYBYTE *target, char *source, MYBYTE *size);
 char *hex2String(char *target, MYBYTE *hex, MYBYTE bytes);
 char *genHostName(char *target, MYBYTE *hex, MYBYTE bytes);
@@ -480,11 +491,8 @@ void checkSize();
 void sendHTTP(void *lpParam);
 void closeConn();
 void getInterfaces(data1 *network);
-void init(void *lparam);
 void loadDHCP();
 void logDebug(void *lpParam);
-void debugl(const char *);
-void logDHCPMess(char *logBuff, MYBYTE dhcpLogLevel);
 void mySplit(char *name, char *value, char *source, char splitChar);
 void procHTTP(data19 *req);
 void pvdata(data9 *req, data3 *op);
@@ -496,5 +504,7 @@ void setLeaseExpiry(data7*);
 void setLeaseExpiry(data7*, MYDWORD);
 void sendStatus(data19 *req);
 void updateStateFile(void*);
+
+}
 
 #endif

@@ -20,6 +20,13 @@ int netInit() {
   if (ifdesclen > 0)
     MultiByteToWideChar(CP_ACP, 0, config.ifname, -1, adptr.desc, ifdesclen);
 
+  WORD wVersionReq = MAKEWORD(1, 1);
+  WSAStartup(wVersionReq, &gb.wsa);
+
+  if (gb.wsa.wVersion != wVersionReq) {
+    logMesg("WSAStartup error", LOG_INFO);
+  }
+
   return 0;
 }
 
@@ -119,7 +126,7 @@ bool getAdapterData()  {
       // look for our ip address
       pUnicast = pCA->FirstUnicastAddress;
       if (pUnicast != NULL) {
-        for (i = 0; pUnicast != NULL; i++) { 
+        for (i = 0; pUnicast != NULL; i++) {
           WSAAddressToStringA(pUnicast->Address.lpSockaddr, pUnicast->Address.iSockaddrLength, NULL, ipstr, &size);
           if (strcmp(ipstr, config.adptrip) == 0) adptr.ipset = true;
           pUnicast = pUnicast->Next;
@@ -156,7 +163,7 @@ bool getAdapterData()  {
 #if 0
 
 char  adptr_ip[255];
-char  adptr_name[MAX_ADAPTER_NAME_LENGTH + 4]; 
+char  adptr_name[MAX_ADAPTER_NAME_LENGTH + 4];
 DWORD adptr_idx;
 
 int getAdptrInfo() {

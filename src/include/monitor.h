@@ -6,19 +6,24 @@
 #define MAX_TRIES 3
 #define MON_TO THREAD_TO * 2
 
+extern "C" bool monitor_running;
+
+namespace monitor {
+
 typedef struct {
   int macfound;
   unsigned char mac[6];
 } Monitor;
 
-extern "C" bool monitor_running;
 extern "C" Monitor mon;
 
-void startMonitor();
-void stopMonitor();
-int monitor_cleanup (int exitthread);
-void *monitor(void *arg);
-void monitorLoop();
+int cleanup (int et);
+void start();
+void stop();
+void *main(void *arg);
+void doLoop();
 DWORD getMacAddress(unsigned char* mac, const char* ip);
+
+}
 
 #endif

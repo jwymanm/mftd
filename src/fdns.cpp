@@ -1,97 +1,82 @@
+#if FDNS
 
 #include "core.h"
 #include "fdns.h"
 
-#if FDNS
-
 bool fdns_running = false;
 
-int fdns_sd;
+namespace fdns {
 
-void fdns_cleanup(int sd, int exitthread) {
-  if (sd) { shutdown(sd, 2); Sleep(1000); closesocket(sd); }
-  if (exitthread) {
-    WSACleanup();
-    fdns_running = false;
-    pthread_exit(NULL);
-  } else return;
+Sockets s;
+LocalBuffers lb;
+
+
+void cleanup(int et) {
+  if (s.server) { shutdown(s.server, 2); Sleep(1000); closesocket(s.server); }
+  if (et) { fdns_running = false; pthread_exit(NULL); } else return;
 }
 
-void *fdns(void *arg) {
+void *main(void *arg) {
 
   fdns_running = true;
-  int wsaerr, rc, len, flags, ip4[4];
-  char msg[DNSMSG_SIZE];
-  char *ip4str;
-  struct sockaddr_in addr, server;
-  WSADATA wsaData;
+  int wsaerr, len, flags, ip4[4], n;
+  char *ip4str, *m = lb.msg;
 
   ip4str = strdup(config.fdnsip);
   for (int i=0; i < 4; i++) { ip4[i] = atoi(strsep(&ip4str, ".")); }
 
-  wsaerr = WSAStartup(MAKEWORD(1, 1), &wsaData);
+  logMesg("FDNS starting up", LOG_INFO);
 
-  if (wsaerr != 0) {
-    debug(0, "FDNS: WSAError, exiting", NULL);
-    fdns_running = false;
-    pthread_exit(NULL);
-  } else {
-    debug(0, "\r\nFDNS: Status: ", (void *) wsaData.szSystemStatus);
-  }
+  s.server = socket(AF_INET, SOCK_DGRAM, 0);
 
-  fdns_sd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (setsockopt(s.server, SOL_SOCKET, SO_REUSEADDR, "1", sizeof(int)) == -1)
+    cleanup(1);
 
-  if (setsockopt(fdns_sd, SOL_SOCKET, SO_REUSEADDR, "1", sizeof(int)) == -1) {
-    printf("here!!!!!!!!\r\n");
-    fdns_cleanup(fdns_sd,1);
-  }
-
-  if (fdns_sd == INVALID_SOCKET) {
+  if (s.server == INVALID_SOCKET) {
     wsaerr = WSAGetLastError();
-    debug(DEBUG_SE, "cannot open socket, error: ", &wsaerr);
-    fdns_cleanup(fdns_sd,1);
+    debug(DEBUG_SE, "cannot open socket, error ", &wsaerr);
+    cleanup(1);
   }
 
-  memset(&server, 0, sizeof(server));
-  memset(&addr, 0, sizeof(addr));
+  memset(&lb.sa, 0, sizeof(lb.sa));
+  memset(&lb.ca, 0, sizeof(lb.ca));
 
-  server.sin_family = AF_INET;
-  server.sin_addr.s_addr = inet_addr(config.adptrip);//htonl(INADDR_ANY);
-  server.sin_port = htons(DNSPORT);
+  lb.sa.sin_family = AF_INET;
+  lb.sa.sin_addr.s_addr = inet_addr(config.adptrip);//htonl(INADDR_ANY);
+  lb.sa.sin_port = htons(DNSPORT);
 
-  rc = bind(fdns_sd, (struct sockaddr *) &server,sizeof(server));
+  s.listen = bind(s.server, (struct sockaddr *) &lb.sa, sizeof(lb.sa));
 
-  if (rc < 0) {
+  if (s.listen < 0) {
     wsaerr = WSAGetLastError();
-    debug(DEBUG_SE, "FDNS: cannot bind dns port, error: ", &wsaerr);
-    fdns_cleanup(fdns_sd,1);
+    debug(DEBUG_SE, "FDNS: cannot bind dns port, error ", &wsaerr);
+    cleanup(1);
   }
 
-  len = sizeof(addr);
+  len = sizeof(lb.ca);
   flags = 0;
 
   do {
-    int n = recvfrom(fdns_sd, msg, DNSMSG_SIZE, flags, (struct sockaddr *) &addr, &len);
-    if (n < 0) { continue; } else {
-      debug(0, "FDNS: client connected", NULL); 
-    }
+    n = recvfrom(s.server, m, DNSMSG_SIZE, flags, (struct sockaddr *) &lb.ca, &len);
+    if (n < 0) continue; else logMesg("FDNS: client connected", LOG_INFO);
     // Same Id
-    msg[2]=0x81;msg[3]=0x80; // Change Opcode and flags
-    msg[6]=0;msg[7]=1; // One answer
-    msg[8]=0;msg[9]=0; // NSCOUNT
-    msg[10]=0;msg[11]=0; // ARCOUNT
+    m[2]=0x81; m[3]=0x80; // Change Opcode and flags
+    m[6]=0; m[7]=1; // One answer
+    m[8]=0; m[9]=0; // NSCOUNT
+    m[10]=0; m[11]=0; // ARCOUNT
     // Keep request in message and add answer
-    msg[n++]=0xC0;msg[n++]=0x0C; // Offset to the domain name
-    msg[n++]=0x00;msg[n++]=0x01; // Type 1
-    msg[n++]=0x00;msg[n++]=0x01; // Class 1
-    msg[n++]=0x00;msg[n++]=0x00;msg[n++]=0x00;msg[n++]=0x3c; // TTL
-    msg[n++]=0x00;msg[n++]=0x04; // Size --> 4
-    msg[n++]=ip4[0];msg[n++]=ip4[1];msg[n++]=ip4[2];msg[n++]=ip4[3]; // IP
+    m[n++]=0xC0; m[n++]=0x0C; // Offset to the domain name
+    m[n++]=0x00; m[n++]=0x01; // Type 1
+    m[n++]=0x00; m[n++]=0x01; // Class 1
+    m[n++]=0x00; m[n++]=0x00; m[n++]=0x00; m[n++]=0x3c; // TTL
+    m[n++]=0x00; m[n++]=0x04; // Size --> 4
+    m[n++]=ip4[0]; m[n++]=ip4[1]; m[n++]=ip4[2]; m[n++]=ip4[3]; // IP
     // Send the answer
-    sendto(fdns_sd,msg,n,flags,(struct sockaddr *)&addr,len);
+    sendto(s.server, m, n, flags, (struct sockaddr *) &lb.ca, len);
   } while (fdns_running);
 
-  fdns_cleanup(fdns_sd, 1);
+  cleanup(1);
 }
 
+}
 #endif

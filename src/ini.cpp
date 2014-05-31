@@ -2,7 +2,7 @@
 #include "ini.h"
 
 int ini_handler(void* cfg, const char* section, const char* name, const char* value) {
-  configuration* pconfig = (configuration*)cfg;
+  Configuration* pconfig = (Configuration*)cfg;
   if (MATCH("Services", "Monitor")) {
     pconfig->monitor = atoi(value);
   } else if (MATCH("Services", "FDNS")) {
@@ -30,7 +30,7 @@ int ini_handler(void* cfg, const char* section, const char* name, const char* va
   } else if (MATCH("Tunnel", "rport")) {
     pconfig->rport = atoi(value);
   } else if (MATCH("Logging", "LogLevel")) {
-    if (!strcasecmp(value, "None")) pconfig->logging = 0;
+    if (!strcasecmp(value, "None")) pconfig->logging = LOG_NONE;
     else pconfig->logging = atoi(value);
   } else {
     return 0;  /* unknown section/name, error */

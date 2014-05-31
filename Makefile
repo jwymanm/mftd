@@ -1,7 +1,7 @@
 #
 # Compilation settings
 #
-# Change or override these on the command line if you want to alter the executable name/service description
+# Change or override these on the command line if you want to alter the executable/service name/description
 
 NAME     = mftd
 DESC     = Monitor DNS Tunnel and DHCP Service
@@ -65,11 +65,18 @@ STRIP    = strip
 #
 
 OBJS    = net.o ini.o fdns.o tunnel.o dhcp.o core.o
-CFLAGS  = -I$(SRCDIR)/include -DNAME=\""$(NAME)"\" -DSERVICE_NAME=\"$(SERVICE_NAME)\" -DSERVICE_DISPLAY_NAME=\"$(SERVICE_DISPLAY_NAME)\" -DMONITOR=$(MONITOR) -DFDNS=$(FDNS) -DTUNNEL=$(TUNNEL) -DDHCP=$(DHCP) -DCFGDIR=\"$(CFGDIR)\" -DTMPDIR=$(TMPDIR)
+WFLAGS  = -Wno-write-strings
+IFLAGS  = -I$(SRCDIR)/include
+CFLAGS  = -DNAME=\""$(NAME)"\" -DSERVICE_NAME=\"$(SERVICE_NAME)\" -DSERVICE_DISPLAY_NAME=\"$(SERVICE_DISPLAY_NAME)\" -DMONITOR=$(MONITOR) -DFDNS=$(FDNS) -DTUNNEL=$(TUNNEL) -DDHCP=$(DHCP) -DCFGDIR=\"$(CFGDIR)\" -DLOGDIR=\"$(LOGDIR)\" -DTMPDIR=\"$(TMPDIR)\" $(WFLAGS) $(IFLAGS)
 LDFLAGS = -static -lwsock32 -liphlpapi -lws2_32 -lpthread -lshlwapi
 
 ifeq ($(MONITOR),1)
-OBJS   += monitor/main.o monitor/net.o
+CFLAGS += -I$(SRCDIR)/include/metakit 
+MOBJS   = main.o net.o
+MKOBJS  = column.o custom.o derived.o field.o fileio.o format.o handler.o persist.o remap.o std.o store.o string.o table.o univ.o view.o viewx.o
+MOBJSS  = $(patsubst %, monitor/%, $(MOBJS))
+MKOBJSS = $(patsubst %, metakit/%, $(MKOBJS))
+OBJS   += $(MOBJSS) $(MKOBJSS)
 endif
 
 NAMES   = $(patsubst %, $(BUILDDIR)/%, $(NAME))
@@ -83,6 +90,7 @@ all: prep compile install
 prep:
 ifeq ($(MONITOR),1)
 	$(MKDIR) $(BUILDDIR)/monitor
+	$(MKDIR) $(BUILDDIR)/metakit
 else
 	$(MKDIR) $(BUILDDIR)
 endif
@@ -106,6 +114,7 @@ mrclean: clean uninstall
 	-$(RMDIR) $(BINDIR)
 ifeq ($(MONITOR),1)
 	-$(RMDIR) $(BUILDDIR)/monitor
+	-$(RMDIR) $(BUILDDIR)/metakit
 else
 	-$(RMDIR) $(BUILDDIR)
 endif

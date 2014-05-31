@@ -1,22 +1,27 @@
-#if TUNNEL 
+#if TUNNEL
 
 #define TUNNEL_TIDX FDNS + MONITOR
 
-struct struct_rc {
-	unsigned int server_socket;
-	unsigned int client_socket;
-	unsigned int remote_socket;
-	struct sockaddr_in server_addr;
-	struct sockaddr_in client_addr;
-	struct sockaddr_in remote_addr;
-	struct hostent *remote_host;
-};
-
 extern "C" bool tunnel_running;
-extern "C" struct struct_rc rc;
 
-int tunnel_cleanup(int sd, int rsd, int exitthread);
-void* tunnel(void* arg);
+namespace tunnel {
+
+typedef struct {
+  unsigned int server;
+  unsigned int client;
+  unsigned int remote;
+} Sockets;
+
+typedef struct {
+  struct sockaddr_in sa;
+  struct sockaddr_in ca;
+  struct sockaddr_in ra;
+  struct hostent *remote_host;
+  char log[256];
+} LocalBuffers;
+
+void* main(void* arg);
+int cleanup(int sd, int rsd, int exitthread);
 int build_server(void);
 int wait_for_clients(void);
 void handle_client(void);
@@ -26,4 +31,5 @@ int use_tunnel(void);
 int fd(void);
 char *get_current_timestamp(void);
 
+}
 #endif

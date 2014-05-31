@@ -22,9 +22,16 @@
 #include <string>
 #include <map>
 
+/* all modules */
+
 #define MALLOC(x) HeapAlloc(GetProcessHeap(), 0, (x))
 #define FREE(x) HeapFree(GetProcessHeap(), 0, (x))
 #define MATCH(s, n) strcasecmp(section, s) == 0 && strcasecmp(name, n) == 0
+
+#define LOG_NONE 0
+#define LOG_NOTICE 1
+#define LOG_INFO 2
+#define LOG_DEBUG 3
 
 #define DEBUG_IP 1
 #define DEBUG_ADPTR 2
@@ -33,9 +40,33 @@
 #define THREAD_TO 5000
 #define THREADCOUNT MONITOR + FDNS + TUNNEL + DHCP
 
-using namespace std;
+typedef struct {
+  char serviceName [_MAX_PATH + 1],
+       displayName [_MAX_PATH + 1],
+       logFN [_MAX_PATH + 1],
+       bpath [_MAX_PATH + 1 ], cpath [_MAX_PATH + 1 ],
+       dpath [_MAX_PATH + 1 ], epath [_MAX_PATH + 1 ],
+       ipath [_MAX_PATH + 1 ], lpath [_MAX_PATH + 1 ],
+       tpath [_MAX_PATH + 1 ], lfname [_MAX_PATH + 1 ];
+  WSADATA wsa;
+} Buffers;
 
-/* all modules */
+typedef struct {
+  HANDLE file;
+  HANDLE log;
+} Events;
+
+typedef struct {
+  const char* bin; // directory that contains executable
+  const char* cfg; // directory that contains config
+  const char* dir; // top level directory
+  const char* exe; // executable
+  const char* ini; // config file
+  const char* log; // log directory
+  char* lfn; // log file
+  const char* tmp; // temp directory
+} Paths;
+
 typedef struct {
   bool monitor;
   bool fdns;
@@ -52,17 +83,33 @@ typedef struct {
   int rport;
   int lport;
   int logging;
-  const char* cfgfn;
-} configuration;
+  bool verbose;
+} Configuration;
 
-/* core */
-extern "C" char serviceName[];
-extern "C" char displayName[];
-extern "C" configuration config;
+namespace core {
+  typedef struct {
+    char log[256];
+    char tmp[512];
+    char ext[512];
+    time_t t;
+  } LocalBuffers;
+}
+
+/* core exports */
+
+extern "C" Buffers gb;
+extern "C" Events ge;
+extern "C" Paths path;
+extern "C" Configuration config;
 extern "C" pthread_t threads[];
+
+char* cloneString(char *string);
+char* strsep(char** stringp, const char* delim);
+void debugl(const char *);
+int debug(int cond, const char* xstr, void* data);
+void __cdecl logThread(void *lpParam);
+void logMesg(char *logBuff, int LogLevel);
 void startThreads();
 void stopThreads();
 void runThreads();
-char* strsep(char** stringp, const char* delim);
-int debug(int cond, const char* xstr, void* data);
 int main(int argc, char* argv[]);

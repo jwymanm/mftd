@@ -1,6 +1,6 @@
 /*
-  core data and routines
-*/
+ * core data and routines
+ */
 
 #include "core.h"
 #include "ini.h"
@@ -10,19 +10,29 @@
 #include "tunnel.h"
 #include "dhcp.h"
 
-char serviceName[] = SERVICE_NAME;
-char displayName[] = SERVICE_DISPLAY_NAME;
+// Globals
+Buffers gb;
+Events ge;
+Paths path;
+Configuration config;
 
 SERVICE_STATUS serviceStatus;
 SERVICE_STATUS_HANDLE serviceStatusHandle = 0;
-
 HANDLE stopServiceEvent = 0;
 
 pthread_t threads[THREADCOUNT];
 
-configuration config;
+namespace core { LocalBuffers lb; }
+using namespace core;
 
 /* helpers */
+
+char *cloneString(char *string) {
+  if (!string) return NULL;
+  char *s = (char*) calloc(1, strlen(string) + 1);
+  if (s) { strcpy(s, string); }
+  return s;
+}
 
 char* strsep(char** stringp, const char* delim) {
   char *p;
@@ -36,7 +46,7 @@ char* strsep(char** stringp, const char* delim) {
 
 int debug(int cond, const char* xstr, void* data) {
   if ((config.logging) != 0) {
-    string str = "DEBUG: ";
+    std::string str = "DEBUG: ";
     if (xstr) str += xstr;
     switch (cond) {
       case DEBUG_IP:
@@ -50,49 +60,104 @@ int debug(int cond, const char* xstr, void* data) {
         if (data) str += static_cast<char *>(data);
         break;
     }
-    cout << endl << str << endl;
+    std::cout << std::endl << str << std::endl;
+  }
+}
+
+void debugl(const char *mess) {
+  char t[254];
+  strcpy(t, mess);
+  logMesg(t, 1);
+}
+
+void logMesg(char* logBuff, int logLevel) {
+  if (config.verbose) debug(0, NAME ": ", (void* ) logBuff);
+  if (logLevel <= config.logging) {
+    char *mess = cloneString(logBuff);
+    _beginthread(logThread, 0, mess);
   }
 }
 
 /* threads */
 
+void __cdecl logThread(void *lpParam) {
+  char* mess = (char*) lpParam;
+  char* lfn = gb.logFN;
+
+  WaitForSingleObject(ge.log, INFINITE);
+  tm *ttm = localtime(&lb.t);
+  char buffer[_MAX_PATH + 1];
+  strftime(buffer, sizeof(buffer), path.lfn, ttm);
+
+  if (strcmp(lfn, buffer)) {
+    if (lfn[0]) {
+      FILE *f = fopen(lfn, "at");
+      if (f) {
+        fprintf(f, "Logging Continued on file %s\n", buffer);
+        fclose(f);
+      }
+      strcpy(lfn, buffer);
+      f = fopen(lfn, "at");
+      if (f) {
+        fprintf(f, "%s\n\n", gb.displayName);
+        fclose(f);
+      }
+    }
+    strcpy(lfn, buffer);
+  }
+
+  FILE *f = fopen(lfn, "at");
+
+  if (f) {
+    strftime(buffer, sizeof(buffer), "%d-%b-%y %X", ttm);
+    fprintf(f, "[%s] %s\n", buffer, mess);
+    fclose(f);
+  } else config.logging = 0;
+
+  free(mess);
+  SetEvent(ge.log);
+
+  _endthread();
+  return;
+}
+
 void startThreads() {
 #if FDNS
-  if (!fdns_running && config.fdns) {
-    pthread_create (&threads[FDNS_TIDX], NULL, fdns, NULL);
+  if (config.fdns && !fdns_running) {
+    pthread_create (&threads[FDNS_TIDX], NULL, fdns::main, NULL);
   }
 #endif
 #if TUNNEL
-  if (!tunnel_running && config.tunnel) {
-    pthread_create (&threads[TUNNEL_TIDX], NULL, tunnel, NULL);
+  if (config.tunnel && !tunnel_running) {
+    pthread_create (&threads[TUNNEL_TIDX], NULL, tunnel::main, NULL);
   }
 #endif
 #if DHCP
-  if (!dhcp_running && config.dhcp) {
-    pthread_create (&threads[DHCP_TIDX], NULL, dhcp, NULL);
-  } 
+  if (config.dhcp && !dhcp_running) {
+    pthread_create (&threads[DHCP_TIDX], NULL, dhcp::main, NULL);
+  }
 #endif
 }
 
 void stopThreads() {
 #if FDNS
-  if (fdns_running && config.fdns) {
-    debug(0, "Stopping fdns", NULL);
+  if (config.fdns && fdns_running) {
+    logMesg("Stopping FDNS", LOG_INFO);
     fdns_running = false;
-    fdns_cleanup(fdns_sd, 0);
+    fdns::cleanup(0);
     Sleep(1000);
   }
 #endif
 #if TUNNEL
-  if (tunnel_running && config.tunnel) {
-    debug(0, "Stopping tunnel", NULL);
+  if (config.tunnel && tunnel_running) {
+    logMesg("Stopping Tunnel", LOG_INFO);
     tunnel_running = false;
     Sleep(1000);
   }
 #endif
 #if DHCP
-  if (dhcp_running && config.dhcp) {
-    debug(0, "Stopping dhcp", NULL);
+  if (config.dhcp && dhcp_running) {
+    logMesg("Stopping DHCP", LOG_INFO);
     dhcp_running = false;
     Sleep(1000);
   }
@@ -104,19 +169,20 @@ void runThreads() {
 #if MONITOR
   if (config.monitor) {
     if (!monitor_running) {
-      startMonitor();
+      monitor::start();
       Sleep(2000);
     }
-    while (monitor_running) { monitorLoop(); };
+    while (monitor_running) { monitor::doLoop(); };
   } else {
 #endif
     if (getAdapterData()) {
       if (!adptr.ipset) {
-        debug(0, "Setting adapter ip..", NULL);
+        logMesg("Setting adapter ip..", LOG_INFO);
         setAdptrIP();
       } else startThreads();
     } else {
-      debug(0, "Looking for adapter: ", (void *) config.ifname);
+      sprintf(lb.log, "Looking for adapter: %s", config.ifname);
+      logMesg(lb.log, LOG_DEBUG);
       stopThreads();
     }
 #if MONITOR
@@ -160,7 +226,7 @@ void WINAPI ServiceMain(DWORD /*argc*/, TCHAR* /*argv*/[]) {
   serviceStatus.dwServiceSpecificExitCode = NO_ERROR;
   serviceStatus.dwCheckPoint = 0;
   serviceStatus.dwWaitHint = 0;
-  serviceStatusHandle = RegisterServiceCtrlHandler(serviceName, ServiceControlHandler);
+  serviceStatusHandle = RegisterServiceCtrlHandler(gb.serviceName, ServiceControlHandler);
 
   if (serviceStatusHandle) {
     serviceStatus.dwCurrentState = SERVICE_START_PENDING;
@@ -171,11 +237,13 @@ void WINAPI ServiceMain(DWORD /*argc*/, TCHAR* /*argv*/[]) {
     serviceStatus.dwCurrentState = SERVICE_RUNNING;
     SetServiceStatus(serviceStatusHandle, &serviceStatus);
 
+    netInit();
+
 #if MONITOR
     if (config.monitor) {
-      startMonitor(); do { monitorLoop(); } while (WaitForSingleObject(stopServiceEvent, 0) == WAIT_TIMEOUT);
+      monitor::start(); do { monitor::doLoop(); } while (WaitForSingleObject(stopServiceEvent, 0) == WAIT_TIMEOUT);
     } else {
-#else 
+#else
       do { runThreads(); Sleep(THREAD_TO); } while (WaitForSingleObject(stopServiceEvent, 0) == WAIT_TIMEOUT);
 #endif
 #if MONITOR
@@ -185,7 +253,7 @@ void WINAPI ServiceMain(DWORD /*argc*/, TCHAR* /*argv*/[]) {
     stopThreads();
 
 #if MONITOR
-    if (config.monitor) stopMonitor();
+    if (config.monitor) monitor::stop();
 #endif
 
     serviceStatus.dwCurrentState = SERVICE_STOP_PENDING;
@@ -193,7 +261,7 @@ void WINAPI ServiceMain(DWORD /*argc*/, TCHAR* /*argv*/[]) {
     serviceStatus.dwWaitHint = 1000;
     SetServiceStatus(serviceStatusHandle, &serviceStatus);
 
-    Sleep(2000); 
+    Sleep(2000);
 
     netExit();
 
@@ -208,7 +276,7 @@ void WINAPI ServiceMain(DWORD /*argc*/, TCHAR* /*argv*/[]) {
 }
 
 void runService() {
-  SERVICE_TABLE_ENTRY serviceTable[] = { {serviceName, ServiceMain}, {0, 0} };
+  SERVICE_TABLE_ENTRY serviceTable[] = { {gb.serviceName, ServiceMain}, {0, 0} };
   StartServiceCtrlDispatcher(serviceTable);
 }
 
@@ -243,23 +311,21 @@ bool stopService(SC_HANDLE service) {
 }
 
 void installService() {
-  SC_HANDLE serviceControlManager =
-    OpenSCManager(0, 0, SC_MANAGER_CREATE_SERVICE | SERVICE_START);
+  SC_HANDLE serviceControlManager = OpenSCManager(0, 0, SC_MANAGER_CREATE_SERVICE | SERVICE_START);
 
   if (serviceControlManager) {
     TCHAR path[ _MAX_PATH + 1 ];
     if (GetModuleFileName(0, path, sizeof(path) / sizeof(path[0])) > 0) {
       SC_HANDLE service =
-        CreateService(serviceControlManager, serviceName, displayName,
-	SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS,
-	SERVICE_AUTO_START, SERVICE_ERROR_IGNORE, path, 0, 0, 0, 0, 0);
+        CreateService(serviceControlManager, gb.serviceName, gb.displayName,
+        SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS, SERVICE_AUTO_START, SERVICE_ERROR_IGNORE, path, 0, 0, 0, 0, 0);
       if (service) {
         printf("Successfully installed %s as a service\n", SERVICE_NAME);
         //StartService(service, 0, NULL);
         CloseServiceHandle(service);
       } else { showError(GetLastError()); }
     }
-     CloseServiceHandle(serviceControlManager);
+    CloseServiceHandle(serviceControlManager);
   }
 }
 
@@ -267,8 +333,7 @@ void uninstallService() {
   SC_HANDLE serviceControlManager = OpenSCManager(0, 0, SC_MANAGER_CONNECT);
 
   if (serviceControlManager) {
-    SC_HANDLE service =
-      OpenService(serviceControlManager, serviceName, SERVICE_QUERY_STATUS | SERVICE_STOP | DELETE);
+    SC_HANDLE service = OpenService(serviceControlManager, gb.serviceName, SERVICE_QUERY_STATUS | SERVICE_STOP | DELETE);
     if (service) {
       if (stopService(service)) {
         if (DeleteService(service)) printf("Successfully removed %s from services\n", SERVICE_NAME);
@@ -288,27 +353,60 @@ int main(int argc, char* argv[]) {
   OSVERSIONINFO osvi;
   osvi.dwOSVersionInfoSize = sizeof(osvi);
   bool result = GetVersionEx(&osvi);
-  TCHAR path [ _MAX_PATH + 1 ] = "", rpath [_MAX_PATH + 1 ] = "";
   char *fileExt;
 
-  if (GetModuleFileName(0, path, sizeof(path) / sizeof(path[0])) > 0) {
-    PathRemoveFileSpec(path);
-    strcat(rpath, path);
-    strcat(path, "\\" NAME ".ini");
-    fileExt  = strrchr(rpath, '\\');
-    *fileExt = 0;
-    strcat(rpath, "\\" CFGDIR "\\" NAME ".ini");
+  strcpy(gb.serviceName, SERVICE_NAME);
+  strcpy(gb.displayName, SERVICE_DISPLAY_NAME);
+
+  lb.t = time(NULL);
+
+  if (GetModuleFileName(0, gb.epath, sizeof(gb.bpath) / sizeof(gb.bpath[0])) > 0) {
+    strcpy(gb.bpath, gb.epath);
+    fileExt = strrchr(gb.bpath, '\\'); *fileExt = 0;
+    strcpy(gb.cpath, gb.bpath);
+    strcpy(gb.dpath, gb.bpath);
+    strcpy(gb.ipath, gb.bpath);
+    strcat(gb.ipath, "\\" NAME ".ini");
     // look for config file in same directory as binary or ..\CFGDIR
-    if (ini_parse(path, ini_handler, &config) < 0) {
-      if (ini_parse(rpath, ini_handler, &config) < 0) {
-        printf("%s can not load configuration file: '" NAME ".ini'\r\nSearch paths: \r\n\t%s\r\n\t%s", NAME, path, rpath); exit(1);
-      } else config.cfgfn = rpath;
-    } else config.cfgfn = path;
+    if (ini_parse(gb.ipath, ini_handler, &config) < 0) {
+      fileExt = strrchr(gb.dpath, '\\'); *fileExt = 0;
+      sprintf(gb.cpath, "%s\\" CFGDIR, gb.dpath);
+      strcpy(gb.ipath, gb.cpath);
+      strcat(gb.ipath, "\\" NAME ".ini");
+      if (ini_parse(gb.ipath, ini_handler, &config) < 0) {
+        printf("%s can not load configuration file: '" NAME ".ini' in . or %s\r\n", gb.cpath);
+        exit(1);
+      } else {
+        sprintf(gb.lpath, "%s\\" LOGDIR, gb.dpath);
+        sprintf(gb.tpath, "%s\\" TMPDIR, gb.dpath);
+      }
+    } else {
+      strcpy(gb.lpath, gb.dpath); strcpy(gb.tpath, gb.dpath);
+    }
   } else { exit(1); }
 
-  netInit();
-
   if (result && osvi.dwPlatformId >= VER_PLATFORM_WIN32_NT) {
+
+    path.bin = gb.bpath; path.cfg = gb.cpath; path.dir = gb.dpath;
+    path.exe = gb.epath; path.ini = gb.ipath; path.log = gb.lpath;
+    path.tmp = gb.tpath; path.lfn = gb.lfname;
+
+    sprintf(path.lfn, "%s\\" NAME "-%%Y%%m%%d.log", path.log);
+
+    // CE() = default security descriptor, ManualReset, Signalled, object name
+    if ((ge.file = CreateEvent(NULL, FALSE, TRUE, TEXT(NAME "FileEvent"))) == NULL)
+      printf(NAME ": createEvent error %d\n", GetLastError());
+    else if (GetLastError() == ERROR_ALREADY_EXISTS) {
+      logMesg("CreateEvent opened an existing event\nServer may already be running", LOG_INFO);
+      exit(1);
+    }
+
+    if ((ge.log = CreateEvent(NULL, FALSE, TRUE, TEXT(NAME "LogEvent"))) == NULL)
+      printf(NAME ": createEvent error %d\n", GetLastError());
+    else if (GetLastError() == ERROR_ALREADY_EXISTS) {
+      logMesg("CreateEvent opened an existing Event\nServer May already be Running", LOG_INFO);
+      exit(1);
+    }
 
     if (argc > 1 && lstrcmpi(argv[1], TEXT("-i")) == 0) {
       installService();
@@ -317,31 +415,29 @@ int main(int argc, char* argv[]) {
     } else if (argc > 1 && lstrcmpi(argv[1], TEXT("-v")) == 0) {
       SC_HANDLE serviceControlManager = OpenSCManager(0, 0, SC_MANAGER_CONNECT);
       bool serviceStopped = true;
-
       if (serviceControlManager) {
-        SC_HANDLE service = OpenService(serviceControlManager, serviceName, SERVICE_QUERY_STATUS | SERVICE_STOP);
-
-	if (service) {
-   	  serviceStopped = stopService(service);
-	  CloseServiceHandle(service);
-	}
-
-	CloseServiceHandle(serviceControlManager);
+        SC_HANDLE service = OpenService(serviceControlManager, gb.serviceName, SERVICE_QUERY_STATUS | SERVICE_STOP);
+	      if (service) {
+   	      serviceStopped = stopService(service);
+	        CloseServiceHandle(service);
+	      }
+	      CloseServiceHandle(serviceControlManager);
       }
-
       if (serviceStopped) {
-        verbatim = true;
-        debug (0, "Starting " NAME, NULL);
+        config.verbose = true;
+        logMesg("Starting " NAME "..", LOG_NOTICE);
+        netInit();
         while (1) { runThreads(); Sleep(THREAD_TO); }
       } else printf("Failed to Stop Service\n");
     } else { runService(); }
     } else if (argc == 1 || lstrcmpi(argv[1], TEXT("-v")) == 0) {
-        verbatim = true;
-        debug (0, "Starting " NAME, NULL);
+        config.verbose = true;
+        logMesg("Starting " NAME "..", LOG_NOTICE);
+        netInit();
         while (1) { runThreads(); Sleep(THREAD_TO); }
-  } else printf("This option is not available on Windows95/98/ME\n");
+  } else printf(NAME " requires Windows XP or newer, exiting\n");
 
-  netExit();
-
+  CloseHandle(ge.file);
+  CloseHandle(ge.log);
   return 0;
 }
