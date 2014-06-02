@@ -48,7 +48,6 @@ void *main(void *arg) {
     // record date of found
     if (getAdapterData()) {
       if (!adptr.ipset) {
-        logMesg("Setting adapter ip", LOG_INFO);
         setAdptrIP();
         stopThreads();
       }
@@ -62,37 +61,6 @@ void *main(void *arg) {
   } while (monitor_running);
 
   cleanup(1);
-}
-
-void runLoop() {
-
-  /*
-  if (adptr.exist) {
-    if (!adptr.ipset) {
-      debug(0, "Monitor: Setting adapter ip..", NULL);
-      setAdptrIP();
-    } else {
-      startThreads();
-      if (!mon.macfound) {
-  	int macerr;
-        debug(0, "Monitor: Looking for mac on ip: ", (void *) config.monip);
-        if ((macerr=getMacAddress(mon.mac, config.monip)) == NO_ERROR) {
-          mon.macfound = true;
-        } else {
-          debug(0,"\r\nMonitor: error obtaining mac from ", (void *) config.monip);
-          printf("Monitor: error code %d\r\n", macerr);
-        }
-      } else {
-        printf("\r\nDEBUG: Monitor: %s has mac address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\r\n",
-          config.monip,mon.mac[0],mon.mac[1],mon.mac[2],mon.mac[3],mon.mac[4],mon.mac[5]);
-      }
-    }
-  } else {
-    stopThreads();
-    debug(0, "Waiting on adapter", NULL);
-  }
-  */
-
 }
 
 }

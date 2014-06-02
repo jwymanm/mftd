@@ -112,8 +112,8 @@ bool getAdapterData()  {
   } while ((dwRetVal == ERROR_BUFFER_OVERFLOW) && (Iterations < MAX_TRIES));
 
   if (dwRetVal == NO_ERROR) {
-//    pCA = pA;
-    while (pCA = pA) {
+    pCA = pA;
+    while (pCA) {
       if (wcscmp(adptr.desc, pCA->Description) != 0) { pCA = pCA->Next; continue; }
       adptr.exist = true;
       adptr.idx4 = pCA->IfIndex;

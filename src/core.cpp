@@ -171,7 +171,6 @@ void threadLoop() {
   do {
     if (getAdapterData()) {
       if (!adptr.ipset) {
-        logMesg("Setting adapter ip", LOG_INFO);
         setAdptrIP();
         //do { getAdapterData(); Sleep(2000); } while (!adptr.ipset);
         stopThreads();
