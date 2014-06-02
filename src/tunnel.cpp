@@ -1,6 +1,7 @@
 #if TUNNEL
 
 #include "core.h"
+#include "net.h"
 #include "tunnel.h"
 
 bool tunnel_running = false;
@@ -10,13 +11,15 @@ namespace tunnel {
 Sockets s;
 LocalBuffers lb;
 
-int buffer_size = 4096;
-
 int cleanup(int et) {
   if (s.server) { shutdown(s.server, 2); closesocket(s.server); }
   if (s.client) { shutdown(s.client, 2); closesocket(s.client); }
   if (s.remote) { shutdown(s.remote, 2); closesocket(s.remote); }
-  if (et) { tunnel_running = false; pthread_exit(NULL); } else return 0;
+  if (et) {
+    tunnel_running = false;
+    logMesg("Tunnel stopped", LOG_INFO);
+    pthread_exit(NULL);
+  } else return 0;
 }
 
 void* main(void* arg) {
@@ -25,19 +28,21 @@ void* main(void* arg) {
 
   tunnel_running = true;
 
-  if (build_server() == 1) cleanup(1);
+  net.failureCounts[TUNNEL_TIDX] = 0;
 
-  logMesg("Tunnel initializing..", LOG_INFO);
+  build_server();
 
-  do { if (wait_for_clients() == 0) if (build_tunnel() == 0) use_tunnel(); }
-  while (tunnel_running);
+  logMesg("Tunnel starting", LOG_INFO);
+
+  while (tunnel_running)
+    if (wait_for_clients()) if (build_tunnel()) use_tunnel();
 
   cleanup(1);
 }
 
 int build_server(void) {
 
-  int optval;
+  int optval = 1;
 
   memset(&lb.sa, 0, sizeof(lb.sa));
 
@@ -46,29 +51,31 @@ int build_server(void) {
   lb.sa.sin_port = htons(config.lport);
   s.server = socket(AF_INET, SOCK_STREAM, 0);
 
-  if (s.server < 0) {
-    perror("build_server: socket()");
-    printf("%d\r\n", WSAGetLastError());
+  if (s.server == INVALID_SOCKET) {
+    sprintf(lb.log, "Tunnel: build_server socket error %d", WSAGetLastError());
+    logMesg(lb.log, LOG_DEBUG);
+    net.failureCounts[TUNNEL_TIDX]++;
     cleanup(1);
   }
-
-  optval = 1;
 
   if (setsockopt(s.server, SOL_SOCKET, SO_REUSEADDR, (const char *) &optval, sizeof(optval)) < 0) {
-    perror("build_server: setsockopt(SO_REUSEADDR)");
-    printf("%d\r\n", WSAGetLastError());
+    sprintf(lb.log, "Tunnel: build_server setsockopt(SO_REUSEADDR) error %d", WSAGetLastError());
+    logMesg(lb.log, LOG_DEBUG);
+    net.failureCounts[TUNNEL_TIDX]++;
     cleanup(1);
   }
 
-  if (bind(s.server, (struct sockaddr *) &lb.sa, sizeof(lb.sa)) < 0) {
-    perror("build_server: bind()");
-    printf("%d\r\n", WSAGetLastError());
+  if (bind(s.server, (struct sockaddr *) &lb.sa, sizeof(lb.sa)) == SOCKET_ERROR) {
+    sprintf(lb.log, "Tunnel: build_server: bind() socket error %d", WSAGetLastError());
+    logMesg(lb.log, LOG_DEBUG);
+    net.failureCounts[TUNNEL_TIDX]++;
     cleanup(1);
   }
 
-  if (listen(s.server, 1) < 0) {
-    perror("build_server: listen()");
-    printf("%d\r\n", WSAGetLastError());
+  if (listen(s.server, 1) == SOCKET_ERROR) {
+    sprintf(lb.log, "Tunnel: build_server: listen() socket error %d", WSAGetLastError());
+    logMesg(lb.log, LOG_DEBUG);
+    net.failureCounts[TUNNEL_TIDX]++;
     cleanup(1);
   }
 
@@ -81,9 +88,11 @@ int wait_for_clients(void) {
   client_addr_size = sizeof(struct sockaddr_in);
   s.client = accept(s.server, (struct sockaddr *) &lb.ca, &client_addr_size);
 
-  if (s.client < 0) {
-    if (errno != EINTR) { perror("wait_for_clients: accept()"); }
-    return 1;
+  if (!tunnel_running) return 0;
+
+  if (s.client == INVALID_SOCKET) {
+    logMesg("Tunnel: wait_for_clients accept() error", LOG_DEBUG);
+    return 0;
   }
 
   if (config.logging) {
@@ -91,17 +100,16 @@ int wait_for_clients(void) {
     logMesg(lb.log, LOG_NOTICE);
   }
 
-  return 0;
+  return 1;
 }
-
 
 int build_tunnel(void) {
 
   lb.remote_host = gethostbyname(config.host);
 
   if (lb.remote_host == NULL) {
-    perror("build_tunnel: gethostbyname()");
-    return 1;
+    logMesg("Tunnel: build_tunnel: gethostbyname()", LOG_DEBUG);
+    return 0;
   }
 
   memset(&lb.ra, 0, sizeof(lb.ra));
@@ -110,43 +118,40 @@ int build_tunnel(void) {
   memcpy(&lb.ra.sin_addr.s_addr, lb.remote_host->h_addr, lb.remote_host->h_length);
   s.remote = socket(AF_INET, SOCK_STREAM, 0);
 
-  if (s.remote < 0) {
-    perror("build_tunnel: socket()");
-    return 1;
+  if (s.remote == INVALID_SOCKET) {
+    logMesg("Tunnel: build_tunnel: socket()", LOG_DEBUG);
+    return 0;
   }
 
-  if (connect(s.remote, (struct sockaddr *) &lb.ra, sizeof(lb.ra)) < 0) {
-    perror("build_tunnel: connect()");
-    return 1;
+  if (connect(s.remote, (struct sockaddr *) &lb.ra, sizeof(lb.ra)) == SOCKET_ERROR) {
+    logMesg("Tunnel: build_tunnel: connect()", LOG_DEBUG);
+    return 0;
   }
 
-  return 0;
+  return 1;
 }
 
 int use_tunnel(void) {
 
-  char buffer[buffer_size];
-  fd_set io;
-
   do {
 
-    FD_ZERO(&io);
-    FD_SET(s.client, &io);
-    FD_SET(s.remote, &io);
+    FD_ZERO(&lb.io);
+    FD_SET(s.client, &lb.io);
+    FD_SET(s.remote, &lb.io);
 
-    memset(buffer, 0, sizeof(buffer));
+    memset(lb.data, 0, sizeof(lb.data));
 
-    if (select(fd(), &io, NULL, NULL, NULL) < 0) {
-      perror("use_tunnel: select()");
+    if (select(fd(), &lb.io, NULL, NULL, NULL) == SOCKET_ERROR) {
+      logMesg("Tunnel: use_tunnel: select()", LOG_DEBUG);
       break;
     }
 
-    if (FD_ISSET(s.client, &io)) {
+    if (FD_ISSET(s.client, &lb.io)) {
 
-      int count = recv(s.client, buffer, sizeof(buffer), 0);
+      int count = recv(s.client, lb.data, sizeof(lb.data), 0);
 
-      if (count < 0) {
-        perror("use_tunnel: recv(rc.client_socket)");
+      if (count == SOCKET_ERROR) {
+        logMesg("Tunnel: use_tunnel: recv(s.client)", LOG_DEBUG);
         closesocket(s.client);
         closesocket(s.remote);
         return 1;
@@ -158,21 +163,21 @@ int use_tunnel(void) {
         return 0;
       }
 
-      send(s.remote, buffer, count, 0);
+      send(s.remote, lb.data, count, 0);
 
-      if (config.logging) {
+      if (config.logging == LOG_DEBUG) {
         printf("> %s > ", get_current_timestamp());
-        fwrite(buffer, sizeof(char), count, stdout);
+        fwrite(lb.data, sizeof(char), count, stdout);
         fflush(stdout);
       }
     }
 
-    if (FD_ISSET(s.remote, &io)) {
+    if (FD_ISSET(s.remote, &lb.io)) {
 
-      int count = recv(s.remote, buffer, sizeof(buffer), 0);
+      int count = recv(s.remote, lb.data, sizeof(lb.data), 0);
 
-      if (count < 0) {
-        perror("use_tunnel: recv(rc.remote_socket)");
+      if (count == SOCKET_ERROR) {
+        logMesg("Tunnel: use_tunnel: recv(rc.remote_socket)", LOG_DEBUG);
         closesocket(s.client);
         closesocket(s.remote);
         return 1;
@@ -184,10 +189,10 @@ int use_tunnel(void) {
         return 0;
       }
 
-      send(s.client, buffer, count, 0);
+      send(s.client, lb.data, count, 0);
 
       if (config.logging) {
-        fwrite(buffer, sizeof(char), count, stdout);
+        fwrite(lb.data, sizeof(char), count, stdout);
         fflush(stdout);
       }
     }
@@ -199,6 +204,7 @@ int use_tunnel(void) {
 int fd(void) {
 	unsigned int fd = s.client;
 	if (fd < s.remote) { fd = s.remote; }
+  //printf("fds = c %d r %d\r\n", s.client, s.remote);
 	return fd + 1;
 }
 

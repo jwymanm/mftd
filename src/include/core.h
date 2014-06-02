@@ -33,10 +33,6 @@
 #define LOG_INFO 2
 #define LOG_DEBUG 3
 
-#define DEBUG_IP 1
-#define DEBUG_ADPTR 2
-#define DEBUG_SE 10
-
 #define THREAD_TO 5000
 #define THREADCOUNT MONITOR + FDNS + TUNNEL + DHCP
 
@@ -87,12 +83,16 @@ typedef struct {
 } Configuration;
 
 namespace core {
-  typedef struct {
-    char log[256];
-    char tmp[512];
-    char ext[512];
-    time_t t;
-  } LocalBuffers;
+
+typedef struct {
+  char log[256];
+  char tmp[512];
+  char ext[512];
+  time_t t;
+} LocalBuffers;
+
+extern "C" LocalBuffers lb;
+
 }
 
 /* core exports */
@@ -105,8 +105,7 @@ extern "C" pthread_t threads[];
 
 char* cloneString(char *string);
 char* strsep(char** stringp, const char* delim);
-void debugl(const char *);
-int debug(int cond, const char* xstr, void* data);
+int debug(int level, const char* xstr, void* data);
 void __cdecl logThread(void *lpParam);
 void logMesg(char *logBuff, int LogLevel);
 void startThreads();

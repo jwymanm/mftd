@@ -20,6 +20,7 @@ SERVICE_STATUS serviceStatus;
 SERVICE_STATUS_HANDLE serviceStatusHandle = 0;
 HANDLE stopServiceEvent = 0;
 
+bool core_running = true;
 pthread_t threads[THREADCOUNT];
 
 namespace core { LocalBuffers lb; }
@@ -44,34 +45,27 @@ char* strsep(char** stringp, const char* delim) {
   return(p);
 }
 
-int debug(int cond, const char* xstr, void* data) {
-  if ((config.logging) != 0) {
-    std::string str = "DEBUG: ";
-    if (xstr) str += xstr;
-    switch (cond) {
-      case DEBUG_IP:
-        str = str + "IP Address: " + static_cast<char *>(data);
-        break;
-      case DEBUG_SE:
-        str += "WSocket Error: ";
-        str += *(int*) data;
-        break;
-      default :
-        if (data) str += static_cast<char *>(data);
-        break;
-    }
-    std::cout << std::endl << str << std::endl;
+int debug(int level, const char* xstr, void* data) {
+  std::string str = "";
+  switch (level) {
+    case LOG_DEBUG:
+      str += "DEBUG: "; break;
+    case LOG_INFO:
+      str += "INFO: "; break;
+    case LOG_NOTICE:
+      str += "NOTICE: "; break;
+    default:
+      break;
   }
-}
-
-void debugl(const char *mess) {
-  char t[254];
-  strcpy(t, mess);
-  logMesg(t, 1);
+  if (xstr) str += xstr;
+  if (data) str += static_cast<char *>(data);
+  std::cout << str << std::endl;
 }
 
 void logMesg(char* logBuff, int logLevel) {
-  if (config.verbose) debug(0, NAME ": ", (void* ) logBuff);
+  if (config.verbose) {
+    debug(logLevel, NULL, (void* ) logBuff);
+  }
   if (logLevel <= config.logging) {
     char *mess = cloneString(logBuff);
     _beginthread(logThread, 0, mess);
@@ -125,16 +119,19 @@ void startThreads() {
 #if FDNS
   if (config.fdns && !fdns_running) {
     pthread_create (&threads[FDNS_TIDX], NULL, fdns::main, NULL);
+    Sleep(1000);
   }
 #endif
 #if TUNNEL
   if (config.tunnel && !tunnel_running) {
     pthread_create (&threads[TUNNEL_TIDX], NULL, tunnel::main, NULL);
+    Sleep(1000);
   }
 #endif
 #if DHCP
   if (config.dhcp && !dhcp_running) {
     pthread_create (&threads[DHCP_TIDX], NULL, dhcp::main, NULL);
+    Sleep(1000);
   }
 #endif
 }
@@ -145,49 +142,48 @@ void stopThreads() {
     logMesg("Stopping FDNS", LOG_INFO);
     fdns_running = false;
     fdns::cleanup(0);
-    Sleep(1000);
+    Sleep(2000);
   }
 #endif
 #if TUNNEL
   if (config.tunnel && tunnel_running) {
     logMesg("Stopping Tunnel", LOG_INFO);
     tunnel_running = false;
-    Sleep(1000);
+    tunnel::cleanup(0);
+    Sleep(2000);
   }
 #endif
 #if DHCP
   if (config.dhcp && dhcp_running) {
     logMesg("Stopping DHCP", LOG_INFO);
     dhcp_running = false;
-    Sleep(1000);
+    dhcp::cleanup(0);
+    Sleep(2000);
   }
 #endif
-  Sleep(2000);
 }
 
-void runThreads() {
+void threadLoop() {
 #if MONITOR
-  if (config.monitor) {
-    if (!monitor_running) {
-      monitor::start();
-      Sleep(2000);
-    }
-    while (monitor_running) { monitor::doLoop(); };
-  } else {
+  if (config.monitor) monitor::start();
+  else
 #endif
+  do {
     if (getAdapterData()) {
       if (!adptr.ipset) {
-        logMesg("Setting adapter ip..", LOG_INFO);
+        logMesg("Setting adapter ip", LOG_INFO);
         setAdptrIP();
-      } else startThreads();
+        //do { getAdapterData(); Sleep(2000); } while (!adptr.ipset);
+        stopThreads();
+      }
+      startThreads();
     } else {
-      sprintf(lb.log, "Looking for adapter: %s", config.ifname);
+      sprintf(lb.log, "Waiting for adapter %s to be available", config.ifname);
       logMesg(lb.log, LOG_DEBUG);
       stopThreads();
     }
-#if MONITOR
-  }
-#endif
+    detectChange();
+  } while (core_running);
 }
 
 /* service code */
@@ -231,44 +227,32 @@ void WINAPI ServiceMain(DWORD /*argc*/, TCHAR* /*argv*/[]) {
   if (serviceStatusHandle) {
     serviceStatus.dwCurrentState = SERVICE_START_PENDING;
     SetServiceStatus(serviceStatusHandle, &serviceStatus);
-
     stopServiceEvent = CreateEvent(0, FALSE, FALSE, 0);
     serviceStatus.dwControlsAccepted |= (SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN);
     serviceStatus.dwCurrentState = SERVICE_RUNNING;
     SetServiceStatus(serviceStatusHandle, &serviceStatus);
-
     netInit();
-
 #if MONITOR
     if (config.monitor) {
-      monitor::start(); do { monitor::doLoop(); } while (WaitForSingleObject(stopServiceEvent, 0) == WAIT_TIMEOUT);
+      monitor::start();
+      while (WaitForSingleObject(stopServiceEvent, 0) == WAIT_TIMEOUT) Sleep(1000);
+      monitor::stop();
     } else {
-#else
-      do { runThreads(); Sleep(THREAD_TO); } while (WaitForSingleObject(stopServiceEvent, 0) == WAIT_TIMEOUT);
 #endif
+    while (WaitForSingleObject(stopServiceEvent, 0) == WAIT_TIMEOUT) threadLoop();
+    core_running = false;
+    stopThreads();
 #if MONITOR
     }
 #endif
-
-    stopThreads();
-
-#if MONITOR
-    if (config.monitor) monitor::stop();
-#endif
-
     serviceStatus.dwCurrentState = SERVICE_STOP_PENDING;
     serviceStatus.dwCheckPoint = 2;
     serviceStatus.dwWaitHint = 1000;
     SetServiceStatus(serviceStatusHandle, &serviceStatus);
-
-    Sleep(2000);
-
     netExit();
-
     serviceStatus.dwControlsAccepted &= ~(SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN);
     serviceStatus.dwCurrentState = SERVICE_STOPPED;
     SetServiceStatus(serviceStatusHandle, &serviceStatus);
-
     CloseHandle(stopServiceEvent);
     stopServiceEvent = 0;
     return;
@@ -286,7 +270,7 @@ void showError(UINT enumber) {
     FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
     NULL, enumber, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // Default language
     (LPTSTR)&lpMsgBuf, 0, NULL);
-    printf("%s\n", lpMsgBuf);
+  logMesg(lpMsgBuf, LOG_NOTICE);
 }
 
 bool stopService(SC_HANDLE service) {
@@ -386,13 +370,10 @@ int main(int argc, char* argv[]) {
   } else { exit(1); }
 
   if (result && osvi.dwPlatformId >= VER_PLATFORM_WIN32_NT) {
-
     path.bin = gb.bpath; path.cfg = gb.cpath; path.dir = gb.dpath;
     path.exe = gb.epath; path.ini = gb.ipath; path.log = gb.lpath;
     path.tmp = gb.tpath; path.lfn = gb.lfname;
-
     sprintf(path.lfn, "%s\\" NAME "-%%Y%%m%%d.log", path.log);
-
     // CE() = default security descriptor, ManualReset, Signalled, object name
     if ((ge.file = CreateEvent(NULL, FALSE, TRUE, TEXT(NAME "FileEvent"))) == NULL)
       printf(NAME ": createEvent error %d\n", GetLastError());
@@ -400,14 +381,13 @@ int main(int argc, char* argv[]) {
       logMesg("CreateEvent opened an existing event\nServer may already be running", LOG_INFO);
       exit(1);
     }
-
     if ((ge.log = CreateEvent(NULL, FALSE, TRUE, TEXT(NAME "LogEvent"))) == NULL)
       printf(NAME ": createEvent error %d\n", GetLastError());
     else if (GetLastError() == ERROR_ALREADY_EXISTS) {
       logMesg("CreateEvent opened an existing Event\nServer May already be Running", LOG_INFO);
       exit(1);
     }
-
+    // TODO: add arguments for each individual service to do one off runs
     if (argc > 1 && lstrcmpi(argv[1], TEXT("-i")) == 0) {
       installService();
     } else if (argc > 1 && lstrcmpi(argv[1], TEXT("-u")) == 0) {
@@ -425,18 +405,17 @@ int main(int argc, char* argv[]) {
       }
       if (serviceStopped) {
         config.verbose = true;
-        logMesg("Starting " NAME "..", LOG_NOTICE);
+        logMesg("Starting " NAME, LOG_NOTICE);
         netInit();
-        while (1) { runThreads(); Sleep(THREAD_TO); }
-      } else printf("Failed to Stop Service\n");
+        threadLoop();
+      } else printf("Failed to stop service\n");
     } else { runService(); }
     } else if (argc == 1 || lstrcmpi(argv[1], TEXT("-v")) == 0) {
         config.verbose = true;
-        logMesg("Starting " NAME "..", LOG_NOTICE);
+        logMesg("Starting " NAME, LOG_NOTICE);
         netInit();
-        while (1) { runThreads(); Sleep(THREAD_TO); }
+        threadLoop();
   } else printf(NAME " requires Windows XP or newer, exiting\n");
-
   CloseHandle(ge.file);
   CloseHandle(ge.log);
   return 0;

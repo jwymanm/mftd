@@ -1,6 +1,7 @@
 #if TUNNEL
 
 #define TUNNEL_TIDX FDNS + MONITOR
+#define BUFFER_SIZE 4096
 
 extern "C" bool tunnel_running;
 
@@ -17,11 +18,13 @@ typedef struct {
   struct sockaddr_in ca;
   struct sockaddr_in ra;
   struct hostent *remote_host;
+  char data[BUFFER_SIZE];
   char log[256];
+  fd_set io;
 } LocalBuffers;
 
 void* main(void* arg);
-int cleanup(int sd, int rsd, int exitthread);
+int cleanup(int et);
 int build_server(void);
 int wait_for_clients(void);
 void handle_client(void);

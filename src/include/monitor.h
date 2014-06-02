@@ -15,15 +15,17 @@ typedef struct {
   unsigned char mac[6];
 } Monitor;
 
+typedef struct {
+  char log[256];
+} LocalBuffers;
+
 extern "C" Monitor mon;
 
-int cleanup (int et);
 void start();
 void stop();
+int cleanup (int et);
 void *main(void *arg);
-void doLoop();
 DWORD getMacAddress(unsigned char* mac, const char* ip);
 
 }
-
 #endif

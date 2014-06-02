@@ -1,6 +1,7 @@
 #if FDNS
 
 #include "core.h"
+#include "net.h"
 #include "fdns.h"
 
 bool fdns_running = false;
@@ -10,31 +11,38 @@ namespace fdns {
 Sockets s;
 LocalBuffers lb;
 
-
 void cleanup(int et) {
   if (s.server) { shutdown(s.server, 2); Sleep(1000); closesocket(s.server); }
-  if (et) { fdns_running = false; pthread_exit(NULL); } else return;
+  if (et) {
+    fdns_running = false;
+    logMesg("FDNS stopped", LOG_INFO);
+    pthread_exit(NULL);
+  } else return;
 }
 
 void *main(void *arg) {
 
   fdns_running = true;
-  int wsaerr, len, flags, ip4[4], n;
+
+  int len, flags, ip4[4], n;
   char *ip4str, *m = lb.msg;
-
   ip4str = strdup(config.fdnsip);
-  for (int i=0; i < 4; i++) { ip4[i] = atoi(strsep(&ip4str, ".")); }
 
-  logMesg("FDNS starting up", LOG_INFO);
+  logMesg("FDNS starting", LOG_INFO);
+
+  for (int i=0; i < 4; i++) { ip4[i] = atoi(strsep(&ip4str, ".")); }
 
   s.server = socket(AF_INET, SOCK_DGRAM, 0);
 
-  if (setsockopt(s.server, SOL_SOCKET, SO_REUSEADDR, "1", sizeof(int)) == -1)
+  if (setsockopt(s.server, SOL_SOCKET, SO_REUSEADDR, "1", sizeof(int)) == -1) {
+    net.failureCounts[FDNS_TIDX]++;
     cleanup(1);
+  }
 
   if (s.server == INVALID_SOCKET) {
-    wsaerr = WSAGetLastError();
-    debug(DEBUG_SE, "cannot open socket, error ", &wsaerr);
+    sprintf(lb.log, "FDNS: cannot open socket, error %u", WSAGetLastError());
+    logMesg(lb.log, LOG_DEBUG);
+    net.failureCounts[FDNS_TIDX]++;
     cleanup(1);
   }
 
@@ -45,13 +53,14 @@ void *main(void *arg) {
   lb.sa.sin_addr.s_addr = inet_addr(config.adptrip);//htonl(INADDR_ANY);
   lb.sa.sin_port = htons(DNSPORT);
 
-  s.listen = bind(s.server, (struct sockaddr *) &lb.sa, sizeof(lb.sa));
-
-  if (s.listen < 0) {
-    wsaerr = WSAGetLastError();
-    debug(DEBUG_SE, "FDNS: cannot bind dns port, error ", &wsaerr);
+  if (bind(s.server, (struct sockaddr *) &lb.sa, sizeof(lb.sa)) == SOCKET_ERROR) {
+    sprintf(lb.log, "FDNS: cannot bind dns port, error %u", WSAGetLastError());
+    logMesg(lb.log, LOG_DEBUG);
+    net.failureCounts[FDNS_TIDX]++;
     cleanup(1);
   }
+
+  net.failureCounts[FDNS_TIDX] = 0;
 
   len = sizeof(lb.ca);
   flags = 0;

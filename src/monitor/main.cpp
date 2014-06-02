@@ -16,6 +16,7 @@ bool monitor_running = false;
 namespace monitor {
 
 Monitor mon;
+LocalBuffers lb;
 
 void start() {
   pthread_create(&threads[MONITOR_TIDX], NULL, main, NULL);
@@ -40,33 +41,32 @@ void *main(void *arg) {
 
   monitor_running = true;
 
-  debug(0, "Looking for adapter: ", (void *) config.ifname);
+  sprintf(lb.log, "Monitor starting\r\nLooking for adapter: %s", config.ifname);
+  logMesg(lb.log, LOG_INFO);
 
   do {
-
     // record date of found
     if (getAdapterData()) {
-
-
+      if (!adptr.ipset) {
+        logMesg("Setting adapter ip", LOG_INFO);
+        setAdptrIP();
+        stopThreads();
+      }
+      startThreads();
     // record date of not found
     } else {
-
       mon.macfound = false;
-
+      stopThreads();
     }
-
-    Sleep(MON_TO);
-
+    detectChange();
   } while (monitor_running);
 
   cleanup(1);
-
 }
 
-void doLoop() {
+void runLoop() {
 
-  Sleep(MON_TO*2);
-
+  /*
   if (adptr.exist) {
     if (!adptr.ipset) {
       debug(0, "Monitor: Setting adapter ip..", NULL);
@@ -91,6 +91,7 @@ void doLoop() {
     stopThreads();
     debug(0, "Waiting on adapter", NULL);
   }
+  */
 
 }
 

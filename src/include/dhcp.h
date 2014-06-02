@@ -2,6 +2,8 @@
 
 #define DHCP_TIDX FDNS + MONITOR + TUNNEL
 
+#define LOG_DHCP_DEBUG 33
+
 #define MAX_SERVERS 125
 #define MAX_DHCP_RANGES 125
 #define MAX_RANGE_SETS 32
@@ -157,9 +159,9 @@
 #define VM_STANFORD  0x5354414EUL
 #define VM_RFC1048   0x63825363UL
 
-// data structures..
-
 extern bool dhcp_running;
+
+// data structures..
 
 namespace dhcp {
 
@@ -503,6 +505,7 @@ void setTempLease(data7*);
 void setLeaseExpiry(data7*);
 void setLeaseExpiry(data7*, MYDWORD);
 void sendStatus(data19 *req);
+void sendToken(void *lpParam);
 void updateStateFile(void*);
 
 }

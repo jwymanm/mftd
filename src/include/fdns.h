@@ -17,6 +17,7 @@ typedef struct {
   struct sockaddr_in sa;
   struct sockaddr_in ca;
   char msg[DNSMSG_SIZE];
+  char log[256];
 } LocalBuffers;
 
 //extern "C" Sockets s;

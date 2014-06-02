@@ -7,6 +7,9 @@
 #include "net.h"
 
 Adapter adptr;
+Network net;
+
+using namespace core;
 
 int netInit() {
 
@@ -47,14 +50,16 @@ int setAdptrIP() {
   char* sysstr = (char*) calloc(2, MAX_ADAPTER_NAME_LENGTH + 4);
 
   if (config.setstatic) {
-    sprintf (sysstr, "netsh interface ip set address \"%s\" static %s %s", adptr.fname, config.adptrip, config.netmask);
+    sprintf(sysstr, "netsh interface ip set address \"%s\" static %s %s", adptr.fname, config.adptrip, config.netmask);
     system(sysstr);
-    debug(DEBUG_IP, "Net: Adapter IP statically set to: ", (void *)config.adptrip);
+    sprintf(lb.log, "Net: Adapter IP statically set to: %s", config.adptrip);
+    logMesg(lb.log, LOG_INFO);
   } else {
     sprintf (sysstr, "netsh interface ip set address \"%s\" dhcp", adptr.fname);
     system(sysstr);
     AddIPAddress(inet_addr(config.adptrip), inet_addr(config.netmask), adptr.idx4, &NTEContext, &NTEInstance);
-    debug(DEBUG_IP, "Net: Added ip: ", (void *)config.adptrip);
+    sprintf(lb.log, "Net: Added IP %s to adapter", config.adptrip);
+    logMesg(lb.log, LOG_INFO);
   }
   free (sysstr);
 }
@@ -73,11 +78,10 @@ void storeA(PCHAR dest, PWCHAR src) {
   LPSTR destbuf = (LPSTR) calloc(1, srclen);
   WideCharToMultiByte(CP_ACP, 0, src, srclen, destbuf, srclen, NULL, NULL);
   strncpy(adptr.fname, destbuf, srclen);
-  free (destbuf);
+  free(destbuf);
 }
 
 bool getAdapterData()  {
-
   DWORD dwSize = 0;
   DWORD dwRetVal = 0;
   unsigned int i = 0;
@@ -95,7 +99,6 @@ bool getAdapterData()  {
   PIP_ADAPTER_MULTICAST_ADDRESS pMulticast = NULL;
   IP_ADAPTER_DNS_SERVER_ADDRESS *pDnServer = NULL;
   IP_ADAPTER_PREFIX *pPrefix = NULL;
-
   adptr.exist = false;
   adptr.ipset = false;
 
@@ -109,20 +112,15 @@ bool getAdapterData()  {
   } while ((dwRetVal == ERROR_BUFFER_OVERFLOW) && (Iterations < MAX_TRIES));
 
   if (dwRetVal == NO_ERROR) {
-
-    pCA = pA;
-
-    while (pCA) {
-
+//    pCA = pA;
+    while (pCA = pA) {
       if (wcscmp(adptr.desc, pCA->Description) != 0) { pCA = pCA->Next; continue; }
-
       adptr.exist = true;
       adptr.idx4 = pCA->IfIndex;
       adptr.idx6 = pCA->Ipv6IfIndex;
       strcpy(adptr.name, pCA->AdapterName);
       wcscpy(adptr.wfname, pCA->FriendlyName);
       storeA(adptr.fname, adptr.wfname);
-
       // look for our ip address
       pUnicast = pCA->FirstUnicastAddress;
       if (pUnicast != NULL) {
@@ -132,32 +130,70 @@ bool getAdapterData()  {
           pUnicast = pUnicast->Next;
         }
       }
-
       if (pCA->PhysicalAddressLength != 0) {
         adptr.phyaddrlen = pCA->PhysicalAddressLength;
         memcpy(adptr.phyaddr, pCA->PhysicalAddress, adptr.phyaddrlen);
       }
-
       break;
-
     }
   } else {
-
     if (dwRetVal == ERROR_NO_DATA)
-      debug(0, "Net: No addresses were found for the requested parameters", NULL);
+      logMesg("Net: No addresses were found for the requested parameters", LOG_DEBUG);
     else {
       if (FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER |
           FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
           NULL, dwRetVal, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-          (LPTSTR) & lpMsgBuf, 0, NULL)) {
-        debug(0, "Net error: ", (void *) lpMsgBuf);
+          (LPTSTR) &lpMsgBuf, 0, NULL)) {
+        logMesg("Net: error in getAdapterData", LOG_DEBUG);
+        logMesg((char *)lpMsgBuf, LOG_DEBUG);
         LocalFree(lpMsgBuf);
       }
     }
   }
-
   if (pA) FREE(pA);
   return adptr.exist;
+}
+
+bool detectChange() {
+
+  logMesg("Calling detectChange", LOG_INFO);
+
+  net.ready = true;
+
+  if (net.failureCounts[0] || net.failureCounts[1] ||
+      net.failureCounts[2] || net.failureCounts[3]) {
+    DWORD eventWait = (DWORD)(2000 * pow(2, 2)); //net.failureCount));
+    sprintf(lb.log, "detectChange sleeping %d msecs\r\nfailureCounts: 0: %d 1: %d 2: %d 3: %d\r\n",
+            eventWait, net.failureCounts[0], net.failureCounts[1], net.failureCounts[2], net.failureCounts[3]);
+   // sprintf(lb.log, "detectChange sleeping %d msecs", eventWait);
+    logMesg(lb.log, LOG_DEBUG);
+    Sleep(eventWait);
+    logMesg("detectChange retrying failed threads..", LOG_DEBUG);
+    net.ready = false;
+    while (net.busy) Sleep(1000);
+    return true;
+  }
+
+  OVERLAPPED overlap;
+  HANDLE hand = NULL;
+  overlap.hEvent = WSACreateEvent();
+
+  if (NotifyAddrChange(&hand, &overlap) != NO_ERROR) {
+    if (WSAGetLastError() != WSA_IO_PENDING) {
+      WSACloseEvent(overlap.hEvent);
+      Sleep(1000);
+      return true;
+    }
+  }
+
+  // change to infinite?
+  if (WaitForSingleObject(overlap.hEvent, UINT_MAX) == WAIT_OBJECT_0)
+    WSACloseEvent(overlap.hEvent);
+
+  net.ready = false;
+  while (net.busy) Sleep(1000);
+  logMesg("Network changed, re-detecting interface", LOG_NOTICE);
+  return true;
 }
 
 #if 0

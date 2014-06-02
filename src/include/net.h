@@ -14,7 +14,14 @@ typedef struct {
   DWORD idx6;
 } Adapter;
 
+typedef struct {
+  bool ready;
+  bool busy;
+  int failureCounts[4];
+} Network;
+
 extern "C" Adapter adptr;
+extern "C" Network net;
 
 int netInit();
 int netExit();
@@ -22,3 +29,4 @@ int setAdptrIP();
 void storeA();
 void printIFAddr();
 bool getAdapterData();
+bool detectChange();
