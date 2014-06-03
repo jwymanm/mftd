@@ -12,10 +12,9 @@ It is useful so you do not have to use Windows ICS and deal with its unreliable 
 Release
 -------
 
-*New*
------
+  *New*
 
-I built a new v0.2 release that is usable. It is located at https://github.com/jwymanm/mftd/releases/download/v0.2/mftd.exe if you do not want to build mftd. Put this in a folder called bin under the source tree and create tmp and log directories along side it. The ini should stay in etc/
+   v0.2 release is now available. The binary is located at https://github.com/jwymanm/mftd/releases/download/v0.2/mftd.exe Put this in a folder called bin under the source tree and create tmp and log directories along side it. The ini should stay in etc/
 
 
 Build
@@ -45,7 +44,7 @@ Use
 Configuration
 -------------
 
-Most configuration options are included in the default configuration file mftd.ini. For more dhcp options please read OpenDHCP's pdf.
+Many configuration options are included in the default configuration file *mftd.ini*. For more dhcp options please read OpenDHCP's pdf.
 
 
 Directory Layout
@@ -65,21 +64,21 @@ Directory Layout
   mftd will check for its configuration file in the same directory it is run from and then in ../etc
 
 
-  *mftd.state*
-
-  dhcp lease information stored in same directory as binary or config
-
-
-  *mftd.htm*
-
-  http data for refreshing lease page stored in the same directory as binary or config
-
-
 ###log/ 
 
-  logging is done automatically in a directory called log wherever the config file is found
+  logging is done automatically in a directory called log either in log/ or ../log depending on if ini is in same directory as the exe or not
 
 
 ###tmp/
 
-  the make process stores built objects in tmp/build and the monitor module utilizes the tmp directory for storage 
+  *mftd.state*
+
+  dhcp lease state information (will be put in with bin + ini if all in same directory)
+
+  *mftd.htm*
+
+  http data for refreshing lease page (will be put in with bin + ini if all in same directory)
+
+  *build/*
+
+  the make process stores built object code in tmp/build
