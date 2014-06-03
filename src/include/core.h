@@ -24,17 +24,34 @@
 
 /* all modules */
 
+#define MYBYTE UCHAR
+#define MYWORD USHORT
+#define MYDWORD UINT
+#define MYWIDE ULONGLONG
+
+#if defined(_WIN64) || defined(_M_ALPHA)
+#define MAX_NATURAL_ALIGNMENT sizeof(ULONGLONG)
+#else
+#define MAX_NATURAL_ALIGNMENT sizeof(DWORD)
+#endif
+
 #define MALLOC(x) HeapAlloc(GetProcessHeap(), 0, (x))
 #define FREE(x) HeapFree(GetProcessHeap(), 0, (x))
 #define MATCH(s, n) strcasecmp(section, s) == 0 && strcasecmp(name, n) == 0
+
+#define THREADCOUNT MONITOR + FDNS + TUNNEL + DHCP
+
+#define MONITOR_IDX 0
+#define FDNS_IDX 1
+#define TUNNEL_IDX 2
+#define DHCP_IDX 3
 
 #define LOG_NONE 0
 #define LOG_NOTICE 1
 #define LOG_INFO 2
 #define LOG_DEBUG 3
 
-#define THREAD_TO 5000
-#define THREADCOUNT MONITOR + FDNS + TUNNEL + DHCP
+extern "C" bool running;
 
 typedef struct {
   char serviceName [_MAX_PATH + 1],
@@ -45,11 +62,13 @@ typedef struct {
        ipath [_MAX_PATH + 1 ], lpath [_MAX_PATH + 1 ],
        tpath [_MAX_PATH + 1 ], lfname [_MAX_PATH + 1 ];
   WSADATA wsa;
-} Buffers;
+} Data;
 
 typedef struct {
   HANDLE file;
   HANDLE log;
+  HANDLE net;
+  OVERLAPPED dCol;
 } Events;
 
 typedef struct {
@@ -80,6 +99,8 @@ typedef struct {
   int lport;
   int logging;
   bool verbose;
+  bool isService;
+  bool isExiting;
 } Configuration;
 
 namespace core {
@@ -97,18 +118,31 @@ extern "C" LocalBuffers lb;
 
 /* core exports */
 
-extern "C" Buffers gb;
+extern "C" Data gd;
 extern "C" Events ge;
 extern "C" Paths path;
 extern "C" Configuration config;
 extern "C" pthread_t threads[];
 
+char *myLower(char *string);
+char *myUpper(char *string);
+char *hex2String(char *target, MYBYTE *hex, MYBYTE bytes);
 char* cloneString(char *string);
 char* strsep(char** stringp, const char* delim);
+char *getHexValue(MYBYTE *target, char *source, MYBYTE *size);
+void wpcopy(PCHAR dest, PWCHAR src);
+bool wildcmp(char *string, char *wild);
+bool isInt(char *str);
 int debug(int level, const char* xstr, void* data);
-void __cdecl logThread(void *lpParam);
+void showError(DWORD enumber);
 void logMesg(char *logBuff, int LogLevel);
+void __cdecl logThread(void *args);
 void startThreads();
 void stopThreads();
-void runThreads();
+void __cdecl threadLoop(void *args);
+void runService();
+void WINAPI ServiceControlHandler(DWORD controlCode);
+void WINAPI ServiceMain(DWORD, TCHAR* []);
+bool stopService(SC_HANDLE service);
+void installService();
 int main(int argc, char* argv[]);

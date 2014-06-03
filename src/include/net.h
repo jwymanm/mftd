@@ -17,6 +17,7 @@ typedef struct {
 typedef struct {
   bool ready;
   bool busy;
+  char hostname[128];
   int failureCounts[4];
 } Network;
 
@@ -26,7 +27,8 @@ extern "C" Network net;
 int netInit();
 int netExit();
 int setAdptrIP();
-void storeA();
-void printIFAddr();
+bool isIP(char *str);
+void IFAddrToString(char* buff, BYTE* phyaddr, DWORD len);
+void getHostName(char *hn);
 bool getAdapterData();
 bool detectChange();

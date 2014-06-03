@@ -1,6 +1,5 @@
 /*
- *
- *   Misc network helper routines
+ *   Network helper routines
 */
 
 #include "core.h"
@@ -13,22 +12,26 @@ using namespace core;
 
 int netInit() {
 
-  adptr.desc    = (LPWSTR) calloc(sizeof(wchar_t), (MAX_ADAPTER_DESCRIPTION_LENGTH + 4));
-  adptr.name    = (PCHAR) calloc(1, MAX_ADAPTER_NAME_LENGTH + 4);
-  adptr.fname   = (PCHAR) calloc(1, MAX_ADAPTER_NAME_LENGTH + 4);
-  adptr.wfname  = (PWCHAR) calloc(sizeof(wchar_t), (MAX_ADAPTER_NAME_LENGTH + 4));
+  getHostName(net.hostname);
+
+  sprintf(lb.log, "Using hostname %s", net.hostname);
+  logMesg(lb.log, LOG_NOTICE);
+
+  adptr.desc = (LPWSTR) calloc(sizeof(wchar_t), (MAX_ADAPTER_DESCRIPTION_LENGTH + 4));
+  adptr.name = (PCHAR) calloc(1, MAX_ADAPTER_NAME_LENGTH + 4);
+  adptr.fname = (PCHAR) calloc(1, MAX_ADAPTER_NAME_LENGTH + 4);
+  adptr.wfname = (PWCHAR) calloc(sizeof(wchar_t), (MAX_ADAPTER_NAME_LENGTH + 4));
 
   int ifdesclen = MultiByteToWideChar(CP_ACP, 0, config.ifname, -1, adptr.desc, 0);
 
   if (ifdesclen > 0)
     MultiByteToWideChar(CP_ACP, 0, config.ifname, -1, adptr.desc, ifdesclen);
 
-  WORD wVersionReq = MAKEWORD(1, 1);
-  WSAStartup(wVersionReq, &gb.wsa);
+  MYWORD wVersionReq = MAKEWORD(1, 1);
+  WSAStartup(wVersionReq, &gd.wsa);
 
-  if (gb.wsa.wVersion != wVersionReq) {
+  if (gd.wsa.wVersion != wVersionReq)
     logMesg("WSAStartup error", LOG_INFO);
-  }
 
   return 0;
 }
@@ -44,41 +47,24 @@ int netExit() {
 
 }
 
-int setAdptrIP() {
-  ULONG NTEContext = 0;
-  ULONG NTEInstance = 0;
-  char* sysstr = (char*) calloc(2, MAX_ADAPTER_NAME_LENGTH + 4);
+void getHostName(char *hn) {
 
-  if (config.setstatic) {
-    sprintf(sysstr, "netsh interface ip set address \"%s\" static %s %s", adptr.fname, config.adptrip, config.netmask);
-    system(sysstr);
-    sprintf(lb.log, "Net: Adapter IP statically set to: %s", config.adptrip);
-    logMesg(lb.log, LOG_INFO);
-  } else {
-    sprintf (sysstr, "netsh interface ip set address \"%s\" dhcp", adptr.fname);
-    system(sysstr);
-    AddIPAddress(inet_addr(config.adptrip), inet_addr(config.netmask), adptr.idx4, &NTEContext, &NTEInstance);
-    sprintf(lb.log, "Net: Added IP %s to adapter", config.adptrip);
-    logMesg(lb.log, LOG_INFO);
+  FIXED_INFO *FixedInfo;
+  IP_ADDR_STRING *pIPAddr;
+  DWORD ulOutBufLen = sizeof(FIXED_INFO);
+
+  FixedInfo = (FIXED_INFO*) GlobalAlloc(GPTR, sizeof(FIXED_INFO));
+
+  if (ERROR_BUFFER_OVERFLOW == GetNetworkParams(FixedInfo, &ulOutBufLen)) {
+    GlobalFree(FixedInfo);
+    FixedInfo = (FIXED_INFO*)GlobalAlloc(GPTR, ulOutBufLen);
   }
-  free (sysstr);
-}
 
-void printIFAddr() {
-  for (int i = 0; i < adptr.phyaddrlen; i++) {
-    if (i == (adptr.phyaddrlen - 1))
-      printf("%.2X\n", adptr.phyaddr[i]);
-    else printf("%.2X-", adptr.phyaddr[i]);
+  if (!GetNetworkParams(FixedInfo, &ulOutBufLen)) {
+    strcpy(hn, FixedInfo->HostName);
+    GlobalFree(FixedInfo);
   }
-}
 
-// stores wchar into pchar
-void storeA(PCHAR dest, PWCHAR src) {
-  int srclen = wcslen(src);
-  LPSTR destbuf = (LPSTR) calloc(1, srclen);
-  WideCharToMultiByte(CP_ACP, 0, src, srclen, destbuf, srclen, NULL, NULL);
-  strncpy(adptr.fname, destbuf, srclen);
-  free(destbuf);
 }
 
 bool getAdapterData()  {
@@ -120,7 +106,7 @@ bool getAdapterData()  {
       adptr.idx6 = pCA->Ipv6IfIndex;
       strcpy(adptr.name, pCA->AdapterName);
       wcscpy(adptr.wfname, pCA->FriendlyName);
-      storeA(adptr.fname, adptr.wfname);
+      wpcopy(adptr.fname, adptr.wfname);
       // look for our ip address
       pUnicast = pCA->FirstUnicastAddress;
       if (pUnicast != NULL) {
@@ -139,64 +125,110 @@ bool getAdapterData()  {
   } else {
     if (dwRetVal == ERROR_NO_DATA)
       logMesg("Net: No addresses were found for the requested parameters", LOG_DEBUG);
-    else {
-      if (FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER |
-          FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-          NULL, dwRetVal, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-          (LPTSTR) &lpMsgBuf, 0, NULL)) {
-        logMesg("Net: error in getAdapterData", LOG_DEBUG);
-        logMesg((char *)lpMsgBuf, LOG_DEBUG);
-        LocalFree(lpMsgBuf);
-      }
-    }
+    else showError(dwRetVal);
   }
   if (pA) FREE(pA);
   return adptr.exist;
 }
 
+int setAdptrIP() {
+  ULONG NTEContext = 0;
+  ULONG NTEInstance = 0;
+  char* sysstr = (char*) calloc(2, MAX_ADAPTER_NAME_LENGTH + 4);
+
+  if (config.setstatic) {
+    sprintf(sysstr, "netsh interface ip set address \"%s\" static %s %s", adptr.fname, config.adptrip, config.netmask);
+    system(sysstr);
+    sprintf(lb.log, "Net: Adapter IP statically set to: %s", config.adptrip);
+    logMesg(lb.log, LOG_INFO);
+  } else {
+    sprintf (sysstr, "netsh interface ip set address \"%s\" dhcp", adptr.fname);
+    system(sysstr);
+    AddIPAddress(inet_addr(config.adptrip), inet_addr(config.netmask), adptr.idx4, &NTEContext, &NTEInstance);
+    sprintf(lb.log, "Net: Added IP %s to adapter", config.adptrip);
+    logMesg(lb.log, LOG_INFO);
+  }
+  free (sysstr);
+}
+
+void IFAddrToString(char* buff, BYTE* phyaddr, DWORD len) {
+  char* bptr = buff;
+  for (int i = 0; i < len; i++) {
+    if (i == (len - 1))
+      sprintf(bptr, "%.2X", phyaddr[i]);
+    else {
+      sprintf(bptr, "%.2X-", phyaddr[i]);
+      bptr+=3;
+    }
+  }
+}
+
+bool isIP(char *str) {
+  if (!str || !(*str)) return false;
+  MYDWORD ip = inet_addr(str); int j = 0;
+  for (; *str; str++) {
+    if (*str == '.' && *(str + 1) != '.') j++;
+    else if (*str < '0' || *str > '9') return false;
+  }
+  if (j == 3) {
+    if (ip == INADDR_NONE || ip == INADDR_ANY) return false;
+    else return true;
+  } else return false;
+}
+
 bool detectChange() {
 
-  logMesg("Calling detectChange", LOG_INFO);
+  logMesg("Waiting for network changes", LOG_INFO);
 
-  net.ready = true;
+  int nfctot =
+    net.failureCounts[MONITOR_IDX] +
+    net.failureCounts[FDNS_IDX] +
+    net.failureCounts[TUNNEL_IDX] +
+    net.failureCounts[DHCP_IDX];
 
-  if (net.failureCounts[0] || net.failureCounts[1] ||
-      net.failureCounts[2] || net.failureCounts[3]) {
-    DWORD eventWait = (DWORD)(2000 * pow(2, 2)); //net.failureCount));
-    sprintf(lb.log, "detectChange sleeping %d msecs\r\nfailureCounts: 0: %d 1: %d 2: %d 3: %d\r\n",
-            eventWait, net.failureCounts[0], net.failureCounts[1], net.failureCounts[2], net.failureCounts[3]);
-   // sprintf(lb.log, "detectChange sleeping %d msecs", eventWait);
+  if (nfctot) {
+    DWORD eventWait = (DWORD) (1000 * pow(2, nfctot));
+    sprintf(lb.log, "detectChange sleeping %d msecs and retrying failed threads", eventWait);
+    logMesg(lb.log, LOG_INFO);
+    sprintf(lb.log, "failureCounts: MONITOR: %d FDNS: %d TUNNEL: %d DHCP: %d\r\n",
+      net.failureCounts[MONITOR_IDX], net.failureCounts[FDNS_IDX], net.failureCounts[TUNNEL_IDX], net.failureCounts[DHCP_IDX]);
     logMesg(lb.log, LOG_DEBUG);
     Sleep(eventWait);
-    logMesg("detectChange retrying failed threads..", LOG_DEBUG);
     net.ready = false;
-    while (net.busy) Sleep(1000);
     return true;
   }
 
-  OVERLAPPED overlap;
-  HANDLE hand = NULL;
-  overlap.hEvent = WSACreateEvent();
+  if (getAdapterData()) net.ready = true;
 
-  if (NotifyAddrChange(&hand, &overlap) != NO_ERROR) {
+  ge.net = NULL;
+  ge.dCol.hEvent = WSACreateEvent();
+
+  if (NotifyAddrChange(&ge.net, &ge.dCol) != NO_ERROR) {
     if (WSAGetLastError() != WSA_IO_PENDING) {
-      WSACloseEvent(overlap.hEvent);
+      WSACloseEvent(ge.dCol.hEvent);
       Sleep(1000);
       return true;
     }
   }
 
   // change to infinite?
-  if (WaitForSingleObject(overlap.hEvent, UINT_MAX) == WAIT_OBJECT_0)
-    WSACloseEvent(overlap.hEvent);
+  if (WaitForSingleObject(ge.dCol.hEvent, UINT_MAX) == WAIT_OBJECT_0)
+    WSACloseEvent(ge.dCol.hEvent);
 
   net.ready = false;
-  while (net.busy) Sleep(1000);
-  logMesg("Network changed, re-detecting interface", LOG_NOTICE);
+
+  if (!config.isExiting)
+    logMesg("Network information changed, waiting to refresh", LOG_NOTICE);
+  else return false;
+
+  /*  Wait 8 seconds for network to finish changing */
+  Sleep(8000);
+  getHostName(net.hostname); // just in case hostname changed
   return true;
 }
 
 #if 0
+// Left here for example code for now
 
 char  adptr_ip[255];
 char  adptr_name[MAX_ADAPTER_NAME_LENGTH + 4];
@@ -344,17 +376,9 @@ int getAdptrAddr()  {
     }
   } else {
     if (dwRetVal == ERROR_NO_DATA)
-      debug(0, "Net: No addresses were found for the requested parameters", NULL);
-    else {
-      if (FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER |
-          FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-          NULL, dwRetVal, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-          (LPTSTR) & lpMsgBuf, 0, NULL)) {
-        printf("\tError: %s", lpMsgBuf);
-        LocalFree(lpMsgBuf);
-        if (pAddresses) FREE(pAddresses);
-        return 0;
-      }
+      logMesg("Net: No addresses were found for the requested parameters", LOG_NOTICE);
+    else
+      showError(dwRetVal);
     }
   }
 

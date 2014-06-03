@@ -1,10 +1,9 @@
 #if MONITOR
 
-#define MONITOR_TIDX 0
+#define MONITOR_TIDX MONITOR
 
 #define WORKING_BUFFER_SIZE 15000
 #define MAX_TRIES 3
-#define MON_TO THREAD_TO * 2
 
 extern "C" bool monitor_running;
 
@@ -12,7 +11,7 @@ namespace monitor {
 
 typedef struct {
   int macfound;
-  unsigned char mac[6];
+  BYTE mac[6];
 } Monitor;
 
 typedef struct {
@@ -24,7 +23,9 @@ extern "C" Monitor mon;
 void start();
 void stop();
 int cleanup (int et);
-void *main(void *arg);
+void *main(void *args);
+void __cdecl watchDevice(void *args);
+void runLoop(bool isService);
 DWORD getMacAddress(unsigned char* mac, const char* ip);
 
 }

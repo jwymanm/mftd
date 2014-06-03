@@ -1,24 +1,11 @@
 #if DHCP
 
-#define DHCP_TIDX FDNS + MONITOR + TUNNEL
-
-#define LOG_DHCP_DEBUG 33
+#define DHCP_TIDX MONITOR + FDNS + TUNNEL
 
 #define MAX_SERVERS 125
 #define MAX_DHCP_RANGES 125
 #define MAX_RANGE_SETS 32
 #define MAX_RANGE_FILTERS 32
-
-#define MYBYTE UCHAR
-#define MYWORD USHORT
-#define MYDWORD UINT
-#define MYWIDE ULONGLONG
-
-#if defined(_WIN64) || defined(_M_ALPHA)
-#define MAX_NATURAL_ALIGNMENT sizeof(ULONGLONG)
-#else
-#define MAX_NATURAL_ALIGNMENT sizeof(DWORD)
-#endif
 
 #define BOOTP_REQUEST  1
 #define BOOTP_REPLY    2
@@ -399,7 +386,7 @@ struct data8 {
   char hostname[64];
 };
 
-struct data1 {
+typedef struct {
   DhcpConnType dhcpConn[MAX_SERVERS];
   ConnType httpConn;
   MYDWORD allServers[MAX_SERVERS];
@@ -410,11 +397,9 @@ struct data1 {
   SOCKET maxFD;
   bool ready;
   bool busy;
-};
+} NetworkData;
 
 struct data2 {
-  WSADATA wsaData;
-  char servername[128];
   MYDWORD zoneServers[2];
   MYDWORD httpClients[8];
   ConnType dhcpReplConn;
@@ -438,15 +423,11 @@ struct data2 {
 
 //Function Prototypes
 void* main(void* arg);
-void init(void *lparam);
-int  cleanup(int et);
+void init();
+int cleanup(int et);
 char *IP2String(char *target, MYDWORD ip);
 char *IP62String(char *target, MYBYTE *source);
-char *getHexValue(MYBYTE *target, char *source, MYBYTE *size);
-char *hex2String(char *target, MYBYTE *hex, MYBYTE bytes);
 char *genHostName(char *target, MYBYTE *hex, MYBYTE bytes);
-char *myLower(char *string);
-char *myUpper(char *string);
 char *readSection(char* raw, FILE *f);
 char *strqtype(char *buff, MYBYTE qtype);
 char getRangeInd(MYDWORD ip);
@@ -477,11 +458,7 @@ data7 *createCache(data71 *lump);
 bool addServer(MYDWORD *array, MYDWORD ip);
 bool checkMask(MYDWORD mask);
 bool checkRange(data17 *rangeData, char rangeInd);
-bool detectChange();
 bool getSection(const char *sectionName, char *buffer, MYBYTE index, char *fileName);
-bool isInt(char *str);
-bool isIP(char *str);
-bool wildcmp(char *string, char *wild);
 int getIndex(char rangeInd, MYDWORD ip);
 void addDHCPRange(char *dp);
 void addMacRange(MYBYTE rangeSetInd, char *macRange);
@@ -492,7 +469,7 @@ void calcRangeLimits(MYDWORD ip, MYDWORD mask, MYDWORD *rangeStart, MYDWORD *ran
 void checkSize();
 void sendHTTP(void *lpParam);
 void closeConn();
-void getInterfaces(data1 *network);
+void getInterfaces();
 void loadDHCP();
 void logDebug(void *lpParam);
 void mySplit(char *name, char *value, char *source, char splitChar);

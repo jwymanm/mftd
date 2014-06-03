@@ -17,25 +17,30 @@ int cleanup(int et) {
   if (s.remote) { shutdown(s.remote, 2); closesocket(s.remote); }
   if (et) {
     tunnel_running = false;
+    Sleep(1000);
     logMesg("Tunnel stopped", LOG_INFO);
     pthread_exit(NULL);
-  } else return 0;
+  } else {
+    logMesg("Tunnel closed network connections", LOG_INFO);
+    return 0;
+  }
 }
 
 void* main(void* arg) {
 
-  int optval;
-
   tunnel_running = true;
-
-  net.failureCounts[TUNNEL_TIDX] = 0;
-
-  build_server();
 
   logMesg("Tunnel starting", LOG_INFO);
 
-  while (tunnel_running)
+  net.failureCounts[TUNNEL_IDX] = 0;
+
+  build_server();
+
+  do {
+    if (!net.ready) { Sleep(1000); continue; }
     if (wait_for_clients()) if (build_tunnel()) use_tunnel();
+  }
+  while (tunnel_running);
 
   cleanup(1);
 }
@@ -54,28 +59,28 @@ int build_server(void) {
   if (s.server == INVALID_SOCKET) {
     sprintf(lb.log, "Tunnel: build_server socket error %d", WSAGetLastError());
     logMesg(lb.log, LOG_DEBUG);
-    net.failureCounts[TUNNEL_TIDX]++;
+    net.failureCounts[TUNNEL_IDX]++;
     cleanup(1);
   }
 
   if (setsockopt(s.server, SOL_SOCKET, SO_REUSEADDR, (const char *) &optval, sizeof(optval)) < 0) {
     sprintf(lb.log, "Tunnel: build_server setsockopt(SO_REUSEADDR) error %d", WSAGetLastError());
     logMesg(lb.log, LOG_DEBUG);
-    net.failureCounts[TUNNEL_TIDX]++;
+    net.failureCounts[TUNNEL_IDX]++;
     cleanup(1);
   }
 
   if (bind(s.server, (struct sockaddr *) &lb.sa, sizeof(lb.sa)) == SOCKET_ERROR) {
     sprintf(lb.log, "Tunnel: build_server: bind() socket error %d", WSAGetLastError());
     logMesg(lb.log, LOG_DEBUG);
-    net.failureCounts[TUNNEL_TIDX]++;
+    net.failureCounts[TUNNEL_IDX]++;
     cleanup(1);
   }
 
   if (listen(s.server, 1) == SOCKET_ERROR) {
     sprintf(lb.log, "Tunnel: build_server: listen() socket error %d", WSAGetLastError());
     logMesg(lb.log, LOG_DEBUG);
-    net.failureCounts[TUNNEL_TIDX]++;
+    net.failureCounts[TUNNEL_IDX]++;
     cleanup(1);
   }
 

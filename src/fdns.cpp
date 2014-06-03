@@ -15,34 +15,40 @@ void cleanup(int et) {
   if (s.server) { shutdown(s.server, 2); Sleep(1000); closesocket(s.server); }
   if (et) {
     fdns_running = false;
+    Sleep(1000);
     logMesg("FDNS stopped", LOG_INFO);
     pthread_exit(NULL);
-  } else return;
+  } else {
+    logMesg("FDNS closed network connections", LOG_INFO);
+    return;
+  }
 }
 
 void *main(void *arg) {
 
   fdns_running = true;
 
+  logMesg("FDNS starting", LOG_INFO);
+
+  net.failureCounts[FDNS_IDX] = 0;
+
   int len, flags, ip4[4], n;
   char *ip4str, *m = lb.msg;
   ip4str = strdup(config.fdnsip);
-
-  logMesg("FDNS starting", LOG_INFO);
 
   for (int i=0; i < 4; i++) { ip4[i] = atoi(strsep(&ip4str, ".")); }
 
   s.server = socket(AF_INET, SOCK_DGRAM, 0);
 
   if (setsockopt(s.server, SOL_SOCKET, SO_REUSEADDR, "1", sizeof(int)) == -1) {
-    net.failureCounts[FDNS_TIDX]++;
+    net.failureCounts[FDNS_IDX]++;
     cleanup(1);
   }
 
   if (s.server == INVALID_SOCKET) {
     sprintf(lb.log, "FDNS: cannot open socket, error %u", WSAGetLastError());
     logMesg(lb.log, LOG_DEBUG);
-    net.failureCounts[FDNS_TIDX]++;
+    net.failureCounts[FDNS_IDX]++;
     cleanup(1);
   }
 
@@ -56,18 +62,17 @@ void *main(void *arg) {
   if (bind(s.server, (struct sockaddr *) &lb.sa, sizeof(lb.sa)) == SOCKET_ERROR) {
     sprintf(lb.log, "FDNS: cannot bind dns port, error %u", WSAGetLastError());
     logMesg(lb.log, LOG_DEBUG);
-    net.failureCounts[FDNS_TIDX]++;
+    net.failureCounts[FDNS_IDX]++;
     cleanup(1);
   }
-
-  net.failureCounts[FDNS_TIDX] = 0;
 
   len = sizeof(lb.ca);
   flags = 0;
 
+  // change to message monitor
   do {
     n = recvfrom(s.server, m, DNSMSG_SIZE, flags, (struct sockaddr *) &lb.ca, &len);
-    if (n < 0) continue; else logMesg("FDNS: client connected", LOG_INFO);
+    if (n < 0) continue;
     // Same Id
     m[2]=0x81; m[3]=0x80; // Change Opcode and flags
     m[6]=0; m[7]=1; // One answer

@@ -55,7 +55,7 @@ LD = i686-w64-mingw32-g++
 
 RM       = /bin/rm -f
 MKDIR    = mkdir -p
-RMDIR    = rmdir -p --ignore-fail-on-non-empty
+RMDIR    = rmdir --ignore-fail-on-non-empty
 CP       = cp
 INSTALL  = install
 STRIP    = strip
@@ -111,10 +111,8 @@ clean:
 	-$(RM) $(OBJSS) $(NAMES) $(TMPDIR)/*.htm $(TMPDIR)/*.state *~
 
 mrclean: clean uninstall
-	-$(RMDIR) $(BINDIR)
 ifeq ($(MONITOR),1)
 	-$(RMDIR) $(BUILDDIR)/monitor
 	-$(RMDIR) $(BUILDDIR)/metakit
-else
-	-$(RMDIR) $(BUILDDIR)
 endif
+	-$(RMDIR) $(BUILDDIR)
