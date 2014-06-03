@@ -17,12 +17,6 @@ Release
    v0.2 release is now available. The binary is located at https://github.com/jwymanm/mftd/releases/download/v0.2/mftd.exe Put this in a folder called bin under the source tree and create tmp and log directories along side it. The ini should stay in etc/
 
 
-Build
------
-
-To build you will need GNU make, mingw-w64 (i686 or x64 for 32/64 bit) depending on what you comment/uncomment in the Makefile, and possibly cygwin for build tools. I believe it builds with regular mingw as well just follow the instructions in the Makefile.
-
-
 Use
 ---
 
@@ -82,3 +76,9 @@ Directory Layout
   *build/*
 
   the make process stores built object code in tmp/build
+
+
+Build
+-----
+
+To build you will need GNU make, mingw-w64 (i686 or x64 for 32/64 bit) depending on what you comment/uncomment in the Makefile, and possibly cygwin for build tools. I believe it builds with regular mingw as well just follow the instructions in the Makefile. Once built it will work with or without cygwin.
