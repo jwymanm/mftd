@@ -9,6 +9,15 @@ This program was written to provide a quick tunnel that sends all traffic to a c
 It is useful so you do not have to use Windows ICS and deal with its unreliable nature along side VPN traffic.
 
 
+Release
+-------
+
+*New*
+-----
+
+I built a new v0.2 release that is usable. It is located at https://github.com/jwymanm/mftd/releases/download/v0.2/mftd.exe if you do not want to build mftd. Put this in a folder called bin under the source tree and create tmp and log directories along side it. The ini should stay in etc/
+
+
 Build
 -----
 
