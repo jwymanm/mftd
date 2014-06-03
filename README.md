@@ -60,7 +60,7 @@ Directory Layout
 
 ###log/ 
 
-  logging is done automatically in a directory called log either in log/ or ../log depending on if ini is in same directory as the exe or not
+  logging is done in a directory called log either in ./ or ../log depending on if ini is in the same directory as the exe or not
 
 
 ###tmp/
