@@ -31,37 +31,81 @@
     <!-- MAIN CONTENT -->
     <div id="main_content_wrap" class="outer">
       <section id="main_content" class="inner">
-        <h3>
-<a name="welcome-to-github-pages" class="anchor" href="#welcome-to-github-pages"><span class="octicon octicon-link"></span></a>Welcome to GitHub Pages.</h3>
+        <p>This program was written to provide a quick tunnel that sends all traffic to a certain port to another host. It includes a fake dns provider so that if hostnames are used then all requests to that hostname:port will be received by this program and tunneled properly. DHCP works if enabled in the source.</p>
 
-<p>This automatic page generator is the easiest way to create beautiful pages for all of your projects. Author your page content here using GitHub Flavored Markdown, select a template crafted by a designer, and publish. After your page is generated, you can check out the new branch:</p>
+<p>It is useful so you do not have to use Windows ICS and deal with its unreliable nature along side VPN traffic.</p>
 
-<pre><code>$ cd your_repo_root/repo_name
-$ git fetch origin
-$ git checkout gh-pages
+<h2>
+<a name="release" class="anchor" href="#release"><span class="octicon octicon-link"></span></a>Release</h2>
+
+<p><em>New</em></p>
+
+<p>v0.2 release is now available. The binary is located at <a href="https://github.com/jwymanm/mftd/releases/download/v0.2/mftd.exe">https://github.com/jwymanm/mftd/releases/download/v0.2/mftd.exe</a> Put this in a folder called bin under the source tree and create tmp and log directories along side it. The ini should stay in etc/</p>
+
+<h2>
+<a name="use" class="anchor" href="#use"><span class="octicon octicon-link"></span></a>Use</h2>
+
+<p>run without installing service</p>
+
+<pre><code>mftd -v
 </code></pre>
 
-<p>If you're using the GitHub for Mac, simply sync your repository and you'll see the new branch.</p>
+<p>install service</p>
+
+<pre><code>mftd -i
+</code></pre>
+
+<p>uninstall service</p>
+
+<pre><code>mftd -u
+</code></pre>
+
+<h2>
+<a name="configuration" class="anchor" href="#configuration"><span class="octicon octicon-link"></span></a>Configuration</h2>
+
+<p>Many configuration options are included in the default configuration file <em>mftd.ini</em>. For more dhcp options please read OpenDHCP's pdf.</p>
+
+<h2>
+<a name="directory-layout" class="anchor" href="#directory-layout"><span class="octicon octicon-link"></span></a>Directory Layout</h2>
 
 <h3>
-<a name="designer-templates" class="anchor" href="#designer-templates"><span class="octicon octicon-link"></span></a>Designer Templates</h3>
+<a name="bin" class="anchor" href="#bin"><span class="octicon octicon-link"></span></a>bin/</h3>
 
-<p>We've crafted some handsome templates for you to use. Go ahead and continue to layouts to browse through them. You can easily go back to edit your page before publishing. After publishing your page, you can revisit the page generator and switch to another theme. Your Page content will be preserved if it remained markdown format.</p>
+<p><em>mftd.exe</em> </p>
 
-<h3>
-<a name="rather-drive-stick" class="anchor" href="#rather-drive-stick"><span class="octicon octicon-link"></span></a>Rather Drive Stick?</h3>
-
-<p>If you prefer to not use the automatic generator, push a branch named <code>gh-pages</code> to your repository to create a page manually. In addition to supporting regular HTML content, GitHub Pages support Jekyll, a simple, blog aware static site generator written by our own Tom Preston-Werner. Jekyll makes it easy to create site-wide headers and footers without having to copy them across every page. It also offers intelligent blog support and other advanced templating features.</p>
+<p>main executable</p>
 
 <h3>
-<a name="authors-and-contributors" class="anchor" href="#authors-and-contributors"><span class="octicon octicon-link"></span></a>Authors and Contributors</h3>
+<a name="etc" class="anchor" href="#etc"><span class="octicon octicon-link"></span></a>etc/</h3>
 
-<p>You can <a href="https://github.com/blog/821" class="user-mention">@mention</a> a GitHub username to generate a link to their profile. The resulting <code>&lt;a&gt;</code> element will link to the contributor's GitHub Profile. For example: In 2007, Chris Wanstrath (<a href="https://github.com/defunkt" class="user-mention">@defunkt</a>), PJ Hyett (<a href="https://github.com/pjhyett" class="user-mention">@pjhyett</a>), and Tom Preston-Werner (<a href="https://github.com/mojombo" class="user-mention">@mojombo</a>) founded GitHub.</p>
+<p><em>mftd.ini</em></p>
+
+<p>mftd will check for its configuration file in the same directory it is run from and then in ../etc</p>
 
 <h3>
-<a name="support-or-contact" class="anchor" href="#support-or-contact"><span class="octicon octicon-link"></span></a>Support or Contact</h3>
+<a name="log" class="anchor" href="#log"><span class="octicon octicon-link"></span></a>log/</h3>
 
-<p>Having trouble with Pages? Check out the documentation at <a href="http://help.github.com/pages">http://help.github.com/pages</a> or contact <a href="mailto:support@github.com">support@github.com</a> and we’ll help you sort it out.</p>
+<p>logging is done in a directory called log either in ./ or ../log depending on if ini is in the same directory as the exe or not</p>
+
+<h3>
+<a name="tmp" class="anchor" href="#tmp"><span class="octicon octicon-link"></span></a>tmp/</h3>
+
+<p><em>mftd.state</em></p>
+
+<p>dhcp lease state information (will be put in with bin + ini if all in same directory)</p>
+
+<p><em>mftd.htm</em></p>
+
+<p>http data for refreshing lease page (will be put in with bin + ini if all in same directory)</p>
+
+<p><em>build/</em></p>
+
+<p>the make process stores built object code in tmp/build</p>
+
+<h2>
+<a name="build" class="anchor" href="#build"><span class="octicon octicon-link"></span></a>Build</h2>
+
+<p>To build you will need GNU make, mingw-w64 (i686 or x64 for 32/64 bit) depending on what you comment/uncomment in the Makefile, and possibly cygwin for build tools. I believe it builds with regular mingw as well just follow the instructions in the Makefile. Once built it will work with or without cygwin.</p>
       </section>
     </div>
 
