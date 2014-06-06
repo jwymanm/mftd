@@ -5,6 +5,7 @@
 #include "core.h"
 #include "ini.h"
 #include "net.h"
+#include "http.h"
 #include "monitor.h"
 #include "fdns.h"
 #include "tunnel.h"
@@ -28,26 +29,26 @@ using namespace core;
 
 /* helpers */
 
-char *cloneString(char *string) {
+char* cloneString(char* string) {
   if (!string) return NULL;
   char *s = (char*) calloc(1, strlen(string) + 1);
   if (s) { strcpy(s, string); }
   return s;
 }
 
-char *myUpper(char *string) {
+char* toLower(char* string) {
+  char diff = 'a' - 'A';
+  MYWORD len = strlen(string);
+  for (int i = 0; i < len; i++)
+    if (string[i] >= 'A' && string[i] <= 'Z') string[i] += diff;
+  return string;
+}
+
+char* toUpper(char* string) {
   char diff = 'a' - 'A';
   MYWORD len = strlen(string);
   for (int i = 0; i < len; i++)
     if (string[i] >= 'a' && string[i] <= 'z') string[i] -= diff;
-  return string;
-}
-
-char *myLower(char *string) {
-  char diff = 'a' - 'A';
-  WORD len = strlen(string);
-  for (int i = 0; i < len; i++)
-    if (string[i] >= 'A' && string[i] <= 'Z') string[i] += diff;
   return string;
 }
 
@@ -61,7 +62,7 @@ char* strsep(char** stringp, const char* delim) {
   return(p);
 }
 
-bool wildcmp(char *string, char *wild) {
+bool wildcmp(char* string, char* wild) {
   // Written by Jack Handy - jakkhandy@hotmail.com
   // slightly modified
   char *cp = NULL; char *mp = NULL;
@@ -93,7 +94,7 @@ bool isInt(char *str) {
   return true;
 }
 
-char *hex2String(char *target, MYBYTE *hex, MYBYTE bytes) {
+char* hex2String(char *target, MYBYTE *hex, MYBYTE bytes) {
   char *dp = target;
   if (bytes) dp += sprintf(target, "%02x", *hex);
   else *target = 0;
@@ -101,26 +102,73 @@ char *hex2String(char *target, MYBYTE *hex, MYBYTE bytes) {
   return target;
 }
 
-char *getHexValue(MYBYTE *target, char *source, MYBYTE *size) {
+char* getHexValue(MYBYTE* target, char* src, MYBYTE* size) {
   if (*size) memset(target, 0, (*size));
-  for ((*size) = 0; (*source) && (*size) < UCHAR_MAX; (*size)++, target++) {
-    if ((*source) >= '0' && (*source) <= '9') { (*target) = (*source) - '0'; }
-    else if ((*source) >= 'a' && (*source) <= 'f') { (*target) = (*source) - 'a' + 10; }
-    else if ((*source) >= 'A' && (*source) <= 'F') { (*target) = (*source) - 'A' + 10; }
-    else { return source; }
-    source++;
-    if ((*source) >= '0' && (*source) <= '9') { (*target) *= 16; (*target) += (*source) - '0'; }
-    else if ((*source) >= 'a' && (*source) <= 'f') { (*target) *= 16; (*target) += (*source) - 'a' + 10; }
-    else if ((*source) >= 'A' && (*source) <= 'F') { (*target) *= 16; (*target) += (*source) - 'A' + 10; }
-    else if ((*source) == ':' || (*source) == '-') { source++; continue; }
-    else if (*source) { return source; }
+  for ((*size) = 0; (*src) && (*size) < UCHAR_MAX; (*size)++, target++) {
+    if ((*src) >= '0' && (*src) <= '9') { (*target) = (*src) - '0'; }
+    else if ((*src) >= 'a' && (*src) <= 'f') { (*target) = (*src) - 'a' + 10; }
+    else if ((*src) >= 'A' && (*src) <= 'F') { (*target) = (*src) - 'A' + 10; }
+    else { return src; }
+    src++;
+    if ((*src) >= '0' && (*src) <= '9') { (*target) *= 16; (*target) += (*src) - '0'; }
+    else if ((*src) >= 'a' && (*src) <= 'f') { (*target) *= 16; (*target) += (*src) - 'a' + 10; }
+    else if ((*src) >= 'A' && (*src) <= 'F') { (*target) *= 16; (*target) += (*src) - 'A' + 10; }
+    else if ((*src) == ':' || (*src) == '-') { src++; continue; }
+    else if (*src) { return src; }
     else { continue; }
-    source++;
-    if ((*source) == ':' || (*source) == '-') { source++; }
-    else if (*source) return source;
+    src++;
+    if ((*src) == ':' || (*src) == '-') { src++; }
+    else if (*src) return src;
   }
-  if (*source) return source;
+  if (*src) return src;
   return NULL;
+}
+
+char* myGetToken(char* buff, MYBYTE index) {
+  while (*buff) {
+    if (index) index--; else break;
+    buff += strlen(buff) + 1;
+  }
+  return buff;
+}
+
+MYWORD myTokenize(char* target, char* src, const char* sep, bool whiteSep) {
+  bool found = true;
+  char* dp = target;
+  MYWORD cnt = 0;
+  while (*src) {
+    if (sep && sep[0] && strchr(sep, (*src))) {
+      found = true; src++;
+      continue;
+    } else if (whiteSep && (*src) <= NBSP) {
+      found = true; src++;
+      continue;
+    }
+    if (found) {
+      if (target != dp) { *dp = 0; dp++; }
+      cnt++;
+    }
+    found = false; *dp = *src; dp++; src++;
+  }
+  *dp = 0; dp++; *dp = 0;
+  return cnt;
+}
+
+char* myTrim(char* target, char* src) {
+  while ((*src) && (*src) <= NBSP) src++;
+  int i = 0;
+  for (; i < MAXCFGSIZE+1 && src[i]; i++) target[i] = src[i];
+  target[i] = src[i];
+  i--;
+  for (; i >= 0 && target[i] <= NBSP; i--) target[i] = 0;
+  return target;
+}
+
+void mySplit(char* name, char* val, const char* src, char splitChar) {
+  int i = 0, j = 0, k = 0;
+  for (; src[i] && j <= MAXCFGSIZE && src[i] != splitChar; i++, j++) name[j] = src[i];
+  if (src[i]) { i++; for (; k <= MAXCFGSIZE && src[i]; i++, k++) val[k] = src[i]; }
+  name[j] = 0; val[k] = 0; myTrim(name, name); myTrim(val, val);
 }
 
 /* logging */
@@ -161,21 +209,21 @@ void logMesg(char* logBuff, int logLevel) {
   }
 }
 
-/* threads */
+/* thread functions */
 
-void __cdecl logThread(void *args) {
+void __cdecl logThread(void* args) {
   char* mess = (char*) args;
   char* lfn = gd.logFN;
 
   WaitForSingleObject(ge.log, INFINITE);
   lb.t = time(NULL);
-  tm *ttm = localtime(&lb.t);
+  tm* ttm = localtime(&lb.t);
   char buffer[_MAX_PATH + 1];
   strftime(buffer, sizeof(buffer), path.lfn, ttm);
 
   if (strcmp(lfn, buffer)) {
     if (lfn[0]) {
-      FILE *f = fopen(lfn, "at");
+      FILE* f = fopen(lfn, "at");
       if (f) {
         fprintf(f, "Logging Continued on file %s\n", buffer);
         fclose(f);
@@ -190,7 +238,7 @@ void __cdecl logThread(void *args) {
     strcpy(lfn, buffer);
   }
 
-  FILE *f = fopen(lfn, "at");
+  FILE* f = fopen(lfn, "at");
 
   if (f) {
     strftime(buffer, sizeof(buffer), "%d-%b-%y %X", ttm);
@@ -208,19 +256,25 @@ void __cdecl logThread(void *args) {
 void startThreads() {
 #if FDNS
   if (config.fdns && !fdns_running) {
-    pthread_create (&threads[FDNS_TIDX], NULL, fdns::main, NULL);
+    pthread_create(&threads[FDNS_TIDX], NULL, fdns::main, NULL);
     Sleep(2000);
   }
 #endif
 #if TUNNEL
   if (config.tunnel && !tunnel_running) {
-    pthread_create (&threads[TUNNEL_TIDX], NULL, tunnel::main, NULL);
+    pthread_create(&threads[TUNNEL_TIDX], NULL, tunnel::main, NULL);
     Sleep(2000);
   }
 #endif
 #if DHCP
   if (config.dhcp && !dhcp_running) {
-    pthread_create (&threads[DHCP_TIDX], NULL, dhcp::main, NULL);
+    pthread_create(&threads[DHCP_TIDX], NULL, dhcp::main, NULL);
+    Sleep(2000);
+  }
+#endif
+#if HTTP
+  if (config.http && !http_running) {
+    pthread_create(&threads[DHCP_TIDX], NULL, http::main, NULL);
     Sleep(2000);
   }
 #endif
@@ -250,9 +304,17 @@ void stopThreads() {
     Sleep(2000);
   }
 #endif
+#if HTTP
+  if (config.http && http_running) {
+    logMesg("Stopping HTTP", LOG_INFO);
+    http_running = false;
+    http::cleanup(0);
+    Sleep(2000);
+  }
+#endif
 }
 
-void __cdecl threadLoop(void *args) {
+void __cdecl threadLoop(void* args) {
 
 #if MONITOR
   if (config.monitor) {
@@ -267,7 +329,6 @@ void __cdecl threadLoop(void *args) {
       sprintf(lb.log, "Adapter with description \"%s\" found", config.ifname);
       logMesg(lb.log, LOG_INFO);
       if (!adptr.ipset) { setAdptrIP(); stopThreads(); }
-      logMesg("Starting threads", LOG_INFO);
       startThreads();
     } else {
       sprintf(lb.log, "Waiting for adapter with description \"%s\" to be available", config.ifname);
@@ -287,7 +348,6 @@ void __cdecl threadLoop(void *args) {
 /* service code */
 
 void WINAPI ServiceControlHandler(DWORD controlCode) {
-
   switch (controlCode) {
     case SERVICE_CONTROL_INTERROGATE:
       break;
@@ -307,7 +367,6 @@ void WINAPI ServiceControlHandler(DWORD controlCode) {
       if (controlCode >= 128 && controlCode <= 255) break;
       else break;
   }
-
   SetServiceStatus(serviceStatusHandle, &serviceStatus);
 }
 
@@ -380,7 +439,7 @@ bool stopService(SC_HANDLE service) {
           printf("Stopped\r\n"); return true;
         } else { Sleep(500); printf("."); }
       }
-      printf("Failed\n"); return false;
+      printf("Failed\r\n"); return false;
     }
   }
   return true;

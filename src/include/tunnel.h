@@ -14,14 +14,17 @@ typedef struct {
 } Sockets;
 
 typedef struct {
-  struct sockaddr_in sa;
-  struct sockaddr_in ca;
-  struct sockaddr_in ra;
   struct hostent *remote_host;
   char data[BUFFER_SIZE];
   char log[256];
   fd_set io;
 } LocalBuffers;
+
+typedef struct {
+  struct sockaddr_in sa;
+  struct sockaddr_in ca;
+  struct sockaddr_in ra;
+} NetworkData;
 
 void* main(void* arg);
 int cleanup(int et);
@@ -32,7 +35,7 @@ void handle_tunnel(void);
 int build_tunnel(void);
 int use_tunnel(void);
 int fd(void);
-char *get_current_timestamp(void);
+char* get_current_timestamp(void);
 
 }
 #endif

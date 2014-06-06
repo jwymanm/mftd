@@ -1,5 +1,5 @@
 /*
- *   Network helper routines
+ *   Network helper and core routines
 */
 
 #include "core.h"
@@ -10,61 +10,124 @@ Network net;
 
 using namespace core;
 
-int netInit() {
-
-  getHostName(net.hostname);
-
-  sprintf(lb.log, "Using hostname %s", net.hostname);
-  logMesg(lb.log, LOG_NOTICE);
-
-  adptr.desc = (LPWSTR) calloc(sizeof(wchar_t), (MAX_ADAPTER_DESCRIPTION_LENGTH + 4));
-  adptr.name = (PCHAR) calloc(1, MAX_ADAPTER_NAME_LENGTH + 4);
-  adptr.fname = (PCHAR) calloc(1, MAX_ADAPTER_NAME_LENGTH + 4);
-  adptr.wfname = (PWCHAR) calloc(sizeof(wchar_t), (MAX_ADAPTER_NAME_LENGTH + 4));
-
-  int ifdesclen = MultiByteToWideChar(CP_ACP, 0, config.ifname, -1, adptr.desc, 0);
-
-  if (ifdesclen > 0)
-    MultiByteToWideChar(CP_ACP, 0, config.ifname, -1, adptr.desc, ifdesclen);
-
-  MYWORD wVersionReq = MAKEWORD(1, 1);
-  WSAStartup(wVersionReq, &gd.wsa);
-
-  if (gd.wsa.wVersion != wVersionReq)
-    logMesg("WSAStartup error", LOG_INFO);
-
-  return 0;
+void IFAddrToString(char* buff, BYTE* phyaddr, DWORD len) {
+  char* bptr = buff;
+  for (int i = 0; i < len; i++) {
+    if (i == (len - 1))
+      sprintf(bptr, "%.2X", phyaddr[i]);
+    else {
+      sprintf(bptr, "%.2X-", phyaddr[i]);
+      bptr+=3;
+    }
+  }
 }
 
-int netExit() {
+bool isIP(const char* str) {
+  if (!str || !(*str)) return false;
+  MYDWORD ip = inet_addr(str); int j = 0;
+  for (; *str; str++) {
+    if (*str == '.' && *(str + 1) != '.') j++;
+    else if (*str < '0' || *str > '9') return false;
+  }
+  if (j == 3) {
+    if (ip == INADDR_NONE || ip == INADDR_ANY) return false;
+    else return true;
+  } else return false;
+}
 
-  WSACleanup();
+char* IP2String(char* target, MYDWORD ip) {
+  NET4Address inaddr;
+  inaddr.ip = ip;
+  sprintf(target, "%u.%u.%u.%u", inaddr.octate[0], inaddr.octate[1], inaddr.octate[2], inaddr.octate[3]);
+  return target;
+}
 
-  free (adptr.wfname);
-  free (adptr.fname);
-  free (adptr.name);
-  free (adptr.desc);
+char* IP62String(char* target, MYBYTE* src) {
+  char *dp = target;
+  bool zerostarted = false;
+  bool zeroended = false;
+  for (MYBYTE i = 0; i < 16; i += 2, src += 2) {
+    if (src[0]) {
+      if (zerostarted) zeroended = true;
+      if (zerostarted && zeroended) {
+        dp += sprintf(dp, "::");
+        zerostarted = false;
+      } else if (dp != target) dp += sprintf(dp, ":");
+      dp += sprintf(dp, "%x", src[0]);
+      dp += sprintf(dp, "%02x", src[1]);
+    } else if (src[1]) {
+      if (zerostarted) zeroended = true;
+      if (zerostarted && zeroended) {
+        dp += sprintf(dp, "::");
+        zerostarted = false;
+      } else if (dp != target) dp += sprintf(dp, ":");
+      dp += sprintf(dp, "%0x", src[1]);
+    } else if (!zeroended) zerostarted = true;
+  }
+  return target;
+}
 
+bool checkMask(MYDWORD mask) {
+  mask = htonl(mask);
+  while (mask) { if (mask < (mask << 1)) return false; mask <<= 1; }
+  return true;
+}
+
+MYDWORD calcMask(MYDWORD rangeStart, MYDWORD rangeEnd) {
+  NET4Address ip1, ip2, mask;
+
+  ip1.ip = htonl(rangeStart);
+  ip2.ip = htonl(rangeEnd);
+
+  for (MYBYTE i = 0; i < 4; i++) {
+    mask.octate[i] = ip1.octate[i] ^ ip2.octate[i];
+
+    if (i && mask.octate[i - 1] < 255)
+      mask.octate[i] = 0;
+    else if (mask.octate[i] == 0)
+      mask.octate[i] = 255;
+    else if (mask.octate[i] < 2)
+      mask.octate[i] = 254;
+    else if (mask.octate[i] < 4)
+      mask.octate[i] = 252;
+    else if (mask.octate[i] < 8)
+      mask.octate[i] = 248;
+    else if (mask.octate[i] < 16)
+      mask.octate[i] = 240;
+    else if (mask.octate[i] < 32)
+      mask.octate[i] = 224;
+    else if (mask.octate[i] < 64)
+      mask.octate[i] = 192;
+    else if (mask.octate[i] < 128)
+      mask.octate[i] = 128;
+    else
+      mask.octate[i] = 0;
+  }
+  return mask.ip;
+}
+
+MYDWORD getClassNetwork(MYDWORD ip) {
+  NET4Address data;
+  data.ip = ip;
+  data.octate[3] = 0;
+  if (data.octate[0] < 192) data.octate[2] = 0;
+  if (data.octate[0] < 128) data.octate[1] = 0;
+  return data.ip;
 }
 
 void getHostName(char *hn) {
-
   FIXED_INFO *FixedInfo;
   IP_ADDR_STRING *pIPAddr;
   DWORD ulOutBufLen = sizeof(FIXED_INFO);
-
   FixedInfo = (FIXED_INFO*) GlobalAlloc(GPTR, sizeof(FIXED_INFO));
-
   if (ERROR_BUFFER_OVERFLOW == GetNetworkParams(FixedInfo, &ulOutBufLen)) {
     GlobalFree(FixedInfo);
     FixedInfo = (FIXED_INFO*)GlobalAlloc(GPTR, ulOutBufLen);
   }
-
   if (!GetNetworkParams(FixedInfo, &ulOutBufLen)) {
     strcpy(hn, FixedInfo->HostName);
     GlobalFree(FixedInfo);
   }
-
 }
 
 bool getAdapterData()  {
@@ -87,7 +150,6 @@ bool getAdapterData()  {
   IP_ADAPTER_PREFIX *pPrefix = NULL;
   adptr.exist = false;
   adptr.ipset = false;
-
   do {
     pA = (IP_ADAPTER_ADDRESSES *) MALLOC(outBufLen);
     if (pA == NULL) return false;
@@ -96,7 +158,6 @@ bool getAdapterData()  {
     else break;
     Iterations++;
   } while ((dwRetVal == ERROR_BUFFER_OVERFLOW) && (Iterations < MAX_TRIES));
-
   if (dwRetVal == NO_ERROR) {
     pCA = pA;
     while (pCA) {
@@ -135,7 +196,6 @@ int setAdptrIP() {
   ULONG NTEContext = 0;
   ULONG NTEInstance = 0;
   char* sysstr = (char*) calloc(2, MAX_ADAPTER_NAME_LENGTH + 4);
-
   if (config.setstatic) {
     sprintf(sysstr, "netsh interface ip set address \"%s\" static %s %s", adptr.fname, config.adptrip, config.netmask);
     system(sysstr);
@@ -151,29 +211,51 @@ int setAdptrIP() {
   free (sysstr);
 }
 
-void IFAddrToString(char* buff, BYTE* phyaddr, DWORD len) {
-  char* bptr = buff;
-  for (int i = 0; i < len; i++) {
-    if (i == (len - 1))
-      sprintf(bptr, "%.2X", phyaddr[i]);
-    else {
-      sprintf(bptr, "%.2X-", phyaddr[i]);
-      bptr+=3;
-    }
+MYDWORD* addServer(MYDWORD* array, MYBYTE maxServers, MYDWORD ip) {
+  for (MYBYTE i = 0; i < maxServers; i++) {
+    if (array[i] == ip) return &(array[i]);
+    else if (!array[i]) { array[i] = ip; return &(array[i]); }
   }
+  return NULL;
 }
 
-bool isIP(char *str) {
-  if (!str || !(*str)) return false;
-  MYDWORD ip = inet_addr(str); int j = 0;
-  for (; *str; str++) {
-    if (*str == '.' && *(str + 1) != '.') j++;
-    else if (*str < '0' || *str > '9') return false;
+MYDWORD* findServer(MYDWORD* array, MYBYTE cnt, MYDWORD ip) {
+  if (ip) {
+    for (MYBYTE i = 0; i < cnt && array[i]; i++) {
+      if (array[i] == ip) return &(array[i]);
+    }
   }
-  if (j == 3) {
-    if (ip == INADDR_NONE || ip == INADDR_ANY) return false;
-    else return true;
-  } else return false;
+  return 0;
+}
+
+void setServers() {
+
+  SOCKET sd = WSASocket(PF_INET, SOCK_DGRAM, 0, 0, 0, 0);
+
+  if (sd == INVALID_SOCKET) return;
+
+  INTERFACE_INFO InterfaceList[MAX_SERVERS];
+  unsigned long nBytesReturned;
+
+  if (WSAIoctl(sd, SIO_GET_INTERFACE_LIST, 0, 0, &InterfaceList,
+    sizeof(InterfaceList), &nBytesReturned, 0, 0) == SOCKET_ERROR) return;
+
+  int nNumInterfaces = nBytesReturned / sizeof(INTERFACE_INFO);
+
+  for (int i = 0; i < nNumInterfaces; ++i) {
+    sockaddr_in* pAddress = (sockaddr_in*)&(InterfaceList[i].iiAddress);
+    u_long nFlags = InterfaceList[i].iiFlags;
+    if (!((nFlags & IFF_POINTTOPOINT) || (nFlags & IFF_LOOPBACK))) {
+      addServer(net.allServers, MAX_SERVERS, pAddress->sin_addr.s_addr);
+    }
+  }
+
+  closesocket(sd);
+
+  net.listenServers[0] = inet_addr(config.adptrip);
+  net.listenMasks[0] = inet_addr(config.netmask);
+
+  return;
 }
 
 bool detectChange() {
@@ -185,13 +267,15 @@ bool detectChange() {
     net.failureCounts[FDNS_IDX] +
     net.failureCounts[TUNNEL_IDX] +
     net.failureCounts[DHCP_IDX];
+   // net.failureCounts[HTTP_IDX];
 
   if (nfctot) {
     DWORD eventWait = (DWORD) (1000 * pow(2, nfctot));
     sprintf(lb.log, "detectChange sleeping %d msecs and retrying failed threads", eventWait);
     logMesg(lb.log, LOG_INFO);
-    sprintf(lb.log, "failureCounts: MONITOR: %d FDNS: %d TUNNEL: %d DHCP: %d\r\n",
+    sprintf(lb.log, "failureCounts: MONITOR: %d FDNS: %d TUNNEL: %d DHCP: %d HTTP: \r\n",
       net.failureCounts[MONITOR_IDX], net.failureCounts[FDNS_IDX], net.failureCounts[TUNNEL_IDX], net.failureCounts[DHCP_IDX]);
+    //net.failureCounts[HTTP_IDX]);
     logMesg(lb.log, LOG_DEBUG);
     Sleep(eventWait);
     net.ready = false;
@@ -218,13 +302,39 @@ bool detectChange() {
   net.ready = false;
 
   if (!config.isExiting)
-    logMesg("Network information changed, waiting to refresh", LOG_NOTICE);
+    logMesg("Network event, waiting to refresh services", LOG_NOTICE);
   else return false;
 
   /*  Wait 8 seconds for network to finish changing */
   Sleep(8000);
   getHostName(net.hostname); // just in case hostname changed
   return true;
+}
+
+int netExit() {
+  WSACleanup();
+  free (adptr.wfname);
+  free (adptr.fname);
+  free (adptr.name);
+  free (adptr.desc);
+}
+
+int netInit() {
+  getHostName(net.hostname);
+  sprintf(lb.log, "Using hostname %s", net.hostname);
+  logMesg(lb.log, LOG_NOTICE);
+  adptr.desc = (LPWSTR) calloc(sizeof(wchar_t), (MAX_ADAPTER_DESCRIPTION_LENGTH + 4));
+  adptr.name = (PCHAR) calloc(1, MAX_ADAPTER_NAME_LENGTH + 4);
+  adptr.fname = (PCHAR) calloc(1, MAX_ADAPTER_NAME_LENGTH + 4);
+  adptr.wfname = (PWCHAR) calloc(sizeof(wchar_t), (MAX_ADAPTER_NAME_LENGTH + 4));
+  int ifdesclen = MultiByteToWideChar(CP_ACP, 0, config.ifname, -1, adptr.desc, 0);
+  if (ifdesclen > 0)
+    MultiByteToWideChar(CP_ACP, 0, config.ifname, -1, adptr.desc, ifdesclen);
+  MYWORD wVersionReq = MAKEWORD(1, 1);
+  WSAStartup(wVersionReq, &gd.wsa);
+  if (gd.wsa.wVersion != wVersionReq)
+    logMesg("WSAStartup error", LOG_INFO);
+  return 0;
 }
 
 #if 0

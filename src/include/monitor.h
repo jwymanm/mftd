@@ -20,13 +20,17 @@ typedef struct {
 
 extern "C" Monitor mon;
 
+// net.cpp
+
+DWORD getMacAddress(unsigned char* mac, const char* ip);
+
+// main.cpp
+
 void start();
 void stop();
 int cleanup (int et);
-void *main(void *args);
 void __cdecl watchDevice(void *args);
-void runLoop(bool isService);
-DWORD getMacAddress(unsigned char* mac, const char* ip);
+void *main(void *args);
 
 }
 #endif

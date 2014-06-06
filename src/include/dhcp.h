@@ -2,7 +2,6 @@
 
 #define DHCP_TIDX MONITOR + FDNS + TUNNEL
 
-#define MAX_SERVERS 125
 #define MAX_DHCP_RANGES 125
 #define MAX_RANGE_SETS 32
 #define MAX_RANGE_FILTERS 32
@@ -157,14 +156,17 @@ typedef struct {
   char tmp[512];
   char ext[512];
   char lea[_MAX_PATH];
-  char htm[_MAX_PATH];
   char cli[_MAX_PATH];
   time_t t;
   timeval tv;
 } LocalBuffers;
 
-// cache
-struct data7 {
+typedef struct {
+  fd_set readfds;
+  fd_set writefds;
+} LocalData;
+
+typedef struct {
   char *mapname;
   time_t expiry;
   union {
@@ -197,31 +199,30 @@ struct data7 {
     char *query;
   };
   MYBYTE data;
-};
+} dhcpData;
 
-// lump
-struct data71 {
-  char *mapname;
-  MYBYTE *response;
-  char *hostname;
-  char *query;
-  SOCKADDR_IN *addr;
-  MYBYTE *options;
+typedef struct {
+  char* mapname;
+  MYBYTE* response;
+  char* hostname;
+  char* query;
+  SOCKADDR_IN* addr;
+  MYBYTE* options;
   MYWORD optionSize;
   int bytes;
   MYBYTE dataType;
-};
+} lumpData;
 
-typedef std::map<std::string, data7*> dhcpMap;
-typedef std::multimap<time_t, data7*> expiryMap;
+typedef std::map<std::string, dhcpData*> dhcpMap;
+typedef std::multimap<time_t, dhcpData*> expiryMap;
 
-struct data3 {
+typedef struct {
   MYBYTE opt_code;
   MYBYTE size;
   MYBYTE value[256];
-};
+} dhcpOptCode;
 
-struct dhcp_header {
+typedef struct {
   MYBYTE bp_op;
   MYBYTE bp_htype;
   MYBYTE bp_hlen;
@@ -241,39 +242,40 @@ struct dhcp_header {
   char bp_sname[64];
   MYBYTE bp_file[128];
   MYBYTE bp_magic_num[4];
-};
+} dhcpHeader;
 
-struct dhcp_packet {
-  dhcp_header header;
-  MYBYTE vend_data[1024 - sizeof(dhcp_header)];
-};
+typedef struct {
+  dhcpHeader header;
+  MYBYTE vend_data[1024 - sizeof(dhcpHeader)];
+} dhcpPacket;
 
 //dhcp range
-struct data13 {
+struct dhcpRange {
   MYBYTE rangeSetInd;
   MYDWORD rangeStart;
   MYDWORD rangeEnd;
   MYDWORD mask;
-  MYBYTE *options;
-  time_t *expiry;
-  data7 **dhcpEntry;
+  MYBYTE* options;
+  time_t* expiry;
+  dhcpData** dhcpEntry;
 };
 
 //rangeSet
-struct data14 {
+typedef struct {
   MYBYTE active;
-  MYBYTE *macStart[MAX_RANGE_FILTERS];
-  MYBYTE *macEnd[MAX_RANGE_FILTERS];
+  MYBYTE* macStart[MAX_RANGE_FILTERS];
+  MYBYTE* macEnd[MAX_RANGE_FILTERS];
   MYBYTE macSize[MAX_RANGE_FILTERS];
-  MYBYTE *vendClass[MAX_RANGE_FILTERS];
+  MYBYTE* vendClass[MAX_RANGE_FILTERS];
   MYBYTE vendClassSize[MAX_RANGE_FILTERS];
-  MYBYTE *userClass[MAX_RANGE_FILTERS];
+  MYBYTE* userClass[MAX_RANGE_FILTERS];
   MYBYTE userClassSize[MAX_RANGE_FILTERS];
   MYDWORD subnetIP[MAX_RANGE_FILTERS];
   MYDWORD targetIP;
-};
+} ranges;
 
-struct data17 {
+//clients
+typedef struct {
   MYBYTE macArray[MAX_RANGE_SETS];
   MYBYTE vendArray[MAX_RANGE_SETS];
   MYBYTE userArray[MAX_RANGE_SETS];
@@ -282,32 +284,21 @@ struct data17 {
   bool vendFound;
   bool userFound;
   bool subnetFound;
-};
+} clients;
 
-struct data19 {
-  SOCKET sock;
-  SOCKADDR_IN remote;
-  socklen_t sockLen;
-  linger ling;
-  int memSize;
-  int bytes;
-  char *dp;
-};
-
-struct data20 {
-  MYBYTE options[sizeof(dhcp_packet)];
+typedef struct {
+  MYBYTE options[sizeof(dhcpPacket)];
   MYWORD optionSize;
   MYDWORD ip;
   MYDWORD mask;
   MYBYTE rangeSetInd;
-};
+} dhcpOpt;
 
-//dhcpRequest
-struct data9  {
+typedef struct {
   MYDWORD lease;
   union {
-    char raw[sizeof(dhcp_packet)];
-    dhcp_packet dhcpp;
+    char raw[sizeof(dhcpPacket)];
+    dhcpPacket dhcpp;
   };
   char hostname[256];
   char chaddr[64];
@@ -317,13 +308,13 @@ struct data9  {
   SOCKADDR_IN remote;
   socklen_t sockLen;
   MYWORD messsize;
-  MYBYTE *vp;
-  data7 *dhcpEntry;
-  data3 agentOption;
-  data3 clientId;
-  data3 subnet;
-  data3 vendClass;
-  data3 userClass;
+  MYBYTE* vp;
+  dhcpData* dhcpEntry;
+  dhcpOptCode agentOption;
+  dhcpOptCode clientId;
+  dhcpOptCode subnet;
+  dhcpOptCode vendClass;
+  dhcpOptCode userClass;
   MYDWORD subnetIP;
   MYDWORD targetIP;
   MYDWORD rebind;
@@ -332,18 +323,9 @@ struct data9  {
   MYBYTE req_type;
   MYBYTE resp_type;
   MYBYTE sockInd;
-};
+} dhcpReq;
 
-struct ConnType {
-  SOCKET sock;
-  SOCKADDR_IN addr;
-  MYDWORD server;
-  MYWORD port;
-  bool loaded;
-  bool ready;
-};
-
-struct DhcpConnType {
+typedef struct {
   SOCKET sock;
   SOCKADDR_IN addr;
   MYDWORD server;
@@ -358,24 +340,16 @@ struct DhcpConnType {
   int pktinfo;
   bool loaded;
   bool ready;
-};
+} DhcpConnType;
 
-struct data4 {
+typedef struct {
   char opName[40];
   MYBYTE opTag;
   MYBYTE opType;
   bool configurable;
-};
+} OPS;
 
-struct data15 {
-  union {
-   unsigned ip:32;
-   MYBYTE octate[4];
-  };
-};
-
-//client
-struct data8 {
+typedef struct {
   MYWORD dhcpInd;
   MYBYTE bp_hlen;
   MYBYTE local;
@@ -384,32 +358,23 @@ struct data8 {
   time_t expiry;
   MYBYTE bp_chaddr[16];
   char hostname[64];
-};
+} dhcpClient;
 
 typedef struct {
   DhcpConnType dhcpConn[MAX_SERVERS];
-  ConnType httpConn;
-  MYDWORD allServers[MAX_SERVERS];
-  MYDWORD listenServers[MAX_SERVERS];
-  MYDWORD listenMasks[MAX_SERVERS];
-  MYDWORD staticServers[MAX_SERVERS];
-  MYDWORD staticMasks[MAX_SERVERS];
   SOCKET maxFD;
-  bool ready;
-  bool busy;
 } NetworkData;
 
-struct data2 {
+typedef struct {
   MYDWORD zoneServers[2];
-  MYDWORD httpClients[8];
   ConnType dhcpReplConn;
   MYDWORD mask;
   MYDWORD lease;
-  data13 dhcpRanges[MAX_DHCP_RANGES];
-  data14 rangeSet[MAX_RANGE_SETS];
+  dhcpRange dhcpRanges[MAX_DHCP_RANGES];
+  ranges rangeSet[MAX_RANGE_SETS];
   MYDWORD rangeStart;
   MYDWORD rangeEnd;
-  MYBYTE *options;
+  MYBYTE* options;
   MYDWORD dhcpSize;
   MYDWORD serial;
   MYDWORD failureCount;
@@ -417,73 +382,56 @@ struct data2 {
   MYBYTE replication;
   time_t dhcpRepl;
   MYBYTE rangeCount;
-  MYBYTE dhcpLogLevel;
   bool hasFilter;
-};
+} dhcpConfig;
 
 //Function Prototypes
+bool htmlStatus(void* hData);
+char* genHostName(char* target, MYBYTE* hex, MYBYTE bytes);
+FILE* openSection(const char* sectionName, MYBYTE index);
+char* readSection(char* raw, FILE* f);
+bool getSection(const char* sectionName, char* buffer, MYBYTE index, char* fileName);
+char* strqtype(char* buff, MYBYTE qtype);
+char getRangeInd(MYDWORD ip);
+int MyRecvMess(char* buffer, MYWORD buffsize, SOCKET m_Socket, bool* broadcast, SOCKADDR_IN* remote, socklen_t sockLen);
+MYBYTE pIP(void* raw, MYDWORD data);
+MYBYTE pULong(void* raw, MYDWORD data);
+MYBYTE pUShort(void* raw, MYWORD data);
+MYWORD fUShort(void* raw);
+MYDWORD alad(dhcpReq* req);
+MYDWORD chad(dhcpReq* req);
+MYDWORD fIP(void* raw);
+MYDWORD fULong(void* raw);
+MYDWORD resad(dhcpReq* req);
+MYDWORD sendRepl(dhcpReq* req);
+MYDWORD sdmess(dhcpReq* req);
+MYDWORD updateDHCP(dhcpReq* req);
+MYWORD gdmess(dhcpReq* req, MYBYTE sockInd);
+dhcpData* findDHCPEntry(char* entry);
+dhcpData* createCache(lumpData* lump);
+bool checkRange(clients* rangeData, char rangeInd);
+int getIndex(char rangeInd, MYDWORD ip);
+void addDHCPRange(char* dp);
+void addMacRange(MYBYTE rangeSetInd, char* macRange);
+void addOptions(dhcpReq* req);
+void addUserClass(MYBYTE rangeSetInd, char* userClass, MYBYTE userClassSize);
+void addVendClass(MYBYTE rangeSetInd, char* vendClass, MYBYTE vendClassSize);
+void calcRangeLimits(MYDWORD ip, MYDWORD mask, MYDWORD* rangeStart, MYDWORD* rangeEnd);
+void checkSize();
+void loadDHCP();
+void logDebug(void* lpParam);
+void lockIP(MYDWORD ip);
+void pvdata(dhcpReq* req, dhcpOptCode* op);
+void releaseLease(void* lpParam);
+void recvRepl(dhcpReq* req);
+void setTempLease(dhcpData*);
+void setLeaseExpiry(dhcpData*);
+void setLeaseExpiry(dhcpData*, MYDWORD);
+void sendToken(void* lpParam);
+void updateStateFile(void*);
+int cleanup(int et);
 void* main(void* arg);
 void init();
-int cleanup(int et);
-char *IP2String(char *target, MYDWORD ip);
-char *IP62String(char *target, MYBYTE *source);
-char *genHostName(char *target, MYBYTE *hex, MYBYTE bytes);
-char *readSection(char* raw, FILE *f);
-char *strqtype(char *buff, MYBYTE qtype);
-char getRangeInd(MYDWORD ip);
-char* myGetToken(char* buff, MYBYTE index);
-char* myTrim(char *target, char *source);
-FILE *openSection(const char *sectionName, MYBYTE index);
-int MyRecvMess(char *buffer, MYWORD buffsize, SOCKET m_Socket, bool *broadcast, SOCKADDR_IN *remote, socklen_t sockLen);
-MYBYTE pIP(void *raw, MYDWORD data);
-MYBYTE pULong(void *raw, MYDWORD data);
-MYBYTE pUShort(void *raw, MYWORD data);
-MYDWORD *findServer(MYDWORD *array, MYBYTE, MYDWORD ip);
-MYDWORD *addServer(MYDWORD *array, MYBYTE, MYDWORD ip);
-MYDWORD alad(data9 *req);
-MYDWORD calcMask(MYDWORD rangeStart, MYDWORD rangeEnd);
-MYDWORD chad(data9 *req);
-MYDWORD fIP(void *raw);
-MYDWORD fULong(void *raw);
-MYDWORD getClassNetwork(MYDWORD ip);
-MYDWORD resad(data9 *req);
-MYDWORD sendRepl(data9 *req);
-MYDWORD sdmess(data9 *req);
-MYDWORD updateDHCP(data9 *req);
-MYWORD fUShort(void *raw);
-MYWORD gdmess(data9 *req, MYBYTE sockInd);
-MYWORD myTokenize(char *target, char *source, const char *sep, bool whiteSep);
-data7* findDHCPEntry(char *entry);
-data7 *createCache(data71 *lump);
-bool addServer(MYDWORD *array, MYDWORD ip);
-bool checkMask(MYDWORD mask);
-bool checkRange(data17 *rangeData, char rangeInd);
-bool getSection(const char *sectionName, char *buffer, MYBYTE index, char *fileName);
-int getIndex(char rangeInd, MYDWORD ip);
-void addDHCPRange(char *dp);
-void addMacRange(MYBYTE rangeSetInd, char *macRange);
-void addOptions(data9 *req);
-void addUserClass(MYBYTE rangeSetInd, char *userClass, MYBYTE userClassSize);
-void addVendClass(MYBYTE rangeSetInd, char *vendClass, MYBYTE vendClassSize);
-void calcRangeLimits(MYDWORD ip, MYDWORD mask, MYDWORD *rangeStart, MYDWORD *rangeEnd);
-void checkSize();
-void sendHTTP(void *lpParam);
-void closeConn();
-void getInterfaces();
-void loadDHCP();
-void logDebug(void *lpParam);
-void mySplit(char *name, char *value, char *source, char splitChar);
-void procHTTP(data19 *req);
-void pvdata(data9 *req, data3 *op);
-void releaseLease(void *lpParam);
-void recvRepl(data9 *req);
-void lockIP(MYDWORD ip);
-void setTempLease(data7*);
-void setLeaseExpiry(data7*);
-void setLeaseExpiry(data7*, MYDWORD);
-void sendStatus(data19 *req);
-void sendToken(void *lpParam);
-void updateStateFile(void*);
 
 }
 

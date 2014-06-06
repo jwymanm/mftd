@@ -10,6 +10,7 @@ namespace tunnel {
 
 Sockets s;
 LocalBuffers lb;
+NetworkData nd;
 
 int cleanup(int et) {
   if (s.server) { shutdown(s.server, 2); closesocket(s.server); }
@@ -34,6 +35,8 @@ void* main(void* arg) {
 
   net.failureCounts[TUNNEL_IDX] = 0;
 
+  while(!net.ready) Sleep(1000);
+
   build_server();
 
   do {
@@ -49,11 +52,11 @@ int build_server(void) {
 
   int optval = 1;
 
-  memset(&lb.sa, 0, sizeof(lb.sa));
+  memset(&nd.sa, 0, sizeof(nd.sa));
 
-  lb.sa.sin_family = AF_INET;
-  lb.sa.sin_addr.s_addr = inet_addr(config.adptrip);
-  lb.sa.sin_port = htons(config.lport);
+  nd.sa.sin_family = AF_INET;
+  nd.sa.sin_addr.s_addr = inet_addr(config.adptrip);
+  nd.sa.sin_port = htons(config.lport);
   s.server = socket(AF_INET, SOCK_STREAM, 0);
 
   if (s.server == INVALID_SOCKET) {
@@ -70,7 +73,7 @@ int build_server(void) {
     cleanup(1);
   }
 
-  if (bind(s.server, (struct sockaddr *) &lb.sa, sizeof(lb.sa)) == SOCKET_ERROR) {
+  if (bind(s.server, (struct sockaddr *) &nd.sa, sizeof(nd.sa)) == SOCKET_ERROR) {
     sprintf(lb.log, "Tunnel: build_server: bind() socket error %d", WSAGetLastError());
     logMesg(lb.log, LOG_DEBUG);
     net.failureCounts[TUNNEL_IDX]++;
@@ -91,7 +94,7 @@ int wait_for_clients(void) {
 
   int client_addr_size;
   client_addr_size = sizeof(struct sockaddr_in);
-  s.client = accept(s.server, (struct sockaddr *) &lb.ca, &client_addr_size);
+  s.client = accept(s.server, (struct sockaddr *) &nd.ca, &client_addr_size);
 
   if (!tunnel_running) return 0;
 
@@ -101,7 +104,7 @@ int wait_for_clients(void) {
   }
 
   if (config.logging) {
-    sprintf(lb.log, "Tunnel: request from %s", inet_ntoa(lb.ca.sin_addr));
+    sprintf(lb.log, "Tunnel: request from %s", inet_ntoa(nd.ca.sin_addr));
     logMesg(lb.log, LOG_NOTICE);
   }
 
@@ -117,10 +120,10 @@ int build_tunnel(void) {
     return 0;
   }
 
-  memset(&lb.ra, 0, sizeof(lb.ra));
-  lb.ra.sin_family = AF_INET;
-  lb.ra.sin_port = htons(config.rport);
-  memcpy(&lb.ra.sin_addr.s_addr, lb.remote_host->h_addr, lb.remote_host->h_length);
+  memset(&nd.ra, 0, sizeof(nd.ra));
+  nd.ra.sin_family = AF_INET;
+  nd.ra.sin_port = htons(config.rport);
+  memcpy(&nd.ra.sin_addr.s_addr, lb.remote_host->h_addr, lb.remote_host->h_length);
   s.remote = socket(AF_INET, SOCK_STREAM, 0);
 
   if (s.remote == INVALID_SOCKET) {
@@ -128,7 +131,7 @@ int build_tunnel(void) {
     return 0;
   }
 
-  if (connect(s.remote, (struct sockaddr *) &lb.ra, sizeof(lb.ra)) == SOCKET_ERROR) {
+  if (connect(s.remote, (struct sockaddr *) &nd.ra, sizeof(nd.ra)) == SOCKET_ERROR) {
     logMesg("Tunnel: build_tunnel: connect()", LOG_DEBUG);
     return 0;
   }

@@ -15,17 +15,20 @@ SERVICE_DISPLAY_NAME="$(DESC)"
 
 # Change to 0 to remove a module, 1 to include
 
-# Monitors and reports adapter and device status
+# Adapter/Communication analytics
 MONITOR=1
 
-# Fake DNS 
+# Fake DNS
 FDNS=1
 
-# TCP tunnel on demand
+# TCP tunnel
 TUNNEL=1
 
 # DHCP server
 DHCP=1
+
+# HTTP server for local access to service status
+HTTP=1
 
 #
 # Path settings
@@ -64,20 +67,31 @@ STRIP    = strip
 # Build Rules
 #
 
-OBJS    = net.o ini.o fdns.o tunnel.o dhcp.o core.o
 WFLAGS  = -Wno-write-strings
 IFLAGS  = -I$(SRCDIR)/include
-CFLAGS  = -DNAME=\""$(NAME)"\" -DSERVICE_NAME=\"$(SERVICE_NAME)\" -DSERVICE_DISPLAY_NAME=\"$(SERVICE_DISPLAY_NAME)\" -DMONITOR=$(MONITOR) -DFDNS=$(FDNS) -DTUNNEL=$(TUNNEL) -DDHCP=$(DHCP) -DCFGDIR=\"$(CFGDIR)\" -DLOGDIR=\"$(LOGDIR)\" -DTMPDIR=\"$(TMPDIR)\" $(WFLAGS) $(IFLAGS)
+CFLAGS  = -DNAME=\""$(NAME)"\" -DSERVICE_NAME=\"$(SERVICE_NAME)\" -DSERVICE_DISPLAY_NAME=\"$(SERVICE_DISPLAY_NAME)\" -DMONITOR=$(MONITOR) -DFDNS=$(FDNS) -DTUNNEL=$(TUNNEL) -DDHCP=$(DHCP) -DHTTP=$(HTTP) -DCFGDIR=\"$(CFGDIR)\" -DLOGDIR=\"$(LOGDIR)\" -DTMPDIR=\"$(TMPDIR)\" $(WFLAGS) $(IFLAGS)
 LDFLAGS = -static -lwsock32 -liphlpapi -lws2_32 -lpthread -lshlwapi
+OBJS    = core.o net.o ini.o
 
 ifeq ($(MONITOR),1)
-CFLAGS += -I$(SRCDIR)/include/metakit 
+CFLAGS += -I$(SRCDIR)/include/metakit
 MOBJS   = main.o net.o
 MKOBJS  = column.o custom.o derived.o field.o fileio.o format.o handler.o persist.o remap.o std.o store.o string.o table.o univ.o view.o viewx.o
-MOBJSS  = $(patsubst %, monitor/%, $(MOBJS))
-MKOBJSS = $(patsubst %, metakit/%, $(MKOBJS))
-OBJS   += $(MOBJSS) $(MKOBJSS)
+OBJS   += $(patsubst %, monitor/%, $(MOBJS))
+OBJS   += $(patsubst %, monitor/metakit/%, $(MKOBJS))
 endif
+ifeq ($(FDNS),1)
+OBJS   += fdns.o
+endif
+ifeq ($(TUNNEL),1)
+OBJS   += tunnel.o
+endif
+ifeq ($(DHCP),1)
+OBJS   += dhcp.o
+endif 
+ifeq ($(HTTP),1)
+OBJS   += http.o
+endif 
 
 NAMES   = $(patsubst %, $(BUILDDIR)/%, $(NAME))
 OBJSS   = $(patsubst %, $(BUILDDIR)/%, $(OBJS))
@@ -89,8 +103,7 @@ all: prep compile install
 
 prep:
 ifeq ($(MONITOR),1)
-	$(MKDIR) $(BUILDDIR)/monitor
-	$(MKDIR) $(BUILDDIR)/metakit
+	$(MKDIR) $(BUILDDIR)/monitor/metakit
 else
 	$(MKDIR) $(BUILDDIR)
 endif
@@ -112,7 +125,7 @@ clean:
 
 mrclean: clean uninstall
 ifeq ($(MONITOR),1)
+	-$(RMDIR) $(BUILDDIR)/monitor/metakit
 	-$(RMDIR) $(BUILDDIR)/monitor
-	-$(RMDIR) $(BUILDDIR)/metakit
 endif
 	-$(RMDIR) $(BUILDDIR)

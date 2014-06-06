@@ -2,7 +2,9 @@
 #include "ini.h"
 
 int ini_handler(void* cfg, const char* section, const char* name, const char* value) {
+
   Configuration* pconfig = (Configuration*)cfg;
+
   if (MATCH("Services", "Monitor")) {
     pconfig->monitor = atoi(value);
   } else if (MATCH("Services", "FDNS")) {
@@ -11,6 +13,11 @@ int ini_handler(void* cfg, const char* section, const char* name, const char* va
     pconfig->tunnel = atoi(value);
   } else if (MATCH("Services", "DHCP")) {
     pconfig->dhcp = atoi(value);
+  } else if (MATCH("Services", "HTTP")) {
+    pconfig->http = atoi(value);
+  } else if (MATCH("Logging", "LogLevel")) {
+    if (!strcasecmp(value, "None")) pconfig->logging = LOG_NONE;
+    else pconfig->logging = atoi(value);
   } else if (MATCH("Adapter", "name")) {
     pconfig->ifname = strdup(value);
   } else if (MATCH("Adapter", "ip")) {
@@ -21,6 +28,10 @@ int ini_handler(void* cfg, const char* section, const char* name, const char* va
     pconfig->setstatic = atoi(value);
   } else if (MATCH("Monitor", "ip")) {
     pconfig->monip = strdup(value);
+  } else if (MATCH("Monitor", "url")) {
+    pconfig->monurl = strdup(value);
+  } else if (MATCH("Monitor", "cfgurl")) {
+    pconfig->moncfgurl = strdup(value);
   } else if (MATCH("FDNS", "ip")) {
     pconfig->fdnsip = strdup(value);
   } else if (MATCH("Tunnel", "host")) {
@@ -29,12 +40,15 @@ int ini_handler(void* cfg, const char* section, const char* name, const char* va
     pconfig->lport = atoi(value);
   } else if (MATCH("Tunnel", "rport")) {
     pconfig->rport = atoi(value);
-  } else if (MATCH("Logging", "LogLevel")) {
-    if (!strcasecmp(value, "None")) pconfig->logging = LOG_NONE;
-    else pconfig->logging = atoi(value);
-  } else {
+  } else if (MATCH("HTTP", "Server")) {
+    pconfig->httpaddr = strdup(value);
+  } else if (MATCH("HTTP", "Client")) {
+    pconfig->httpclient = strdup(value);
+  } else if (MATCH("HTTP", "Title")) {
+    pconfig->htmltitle = strdup(value);
+  } else
     return 0;  /* unknown section/name, error */
-  }
+
   return 1;
 }
 

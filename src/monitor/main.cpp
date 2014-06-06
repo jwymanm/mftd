@@ -38,6 +38,30 @@ int cleanup (int et) {
   }
 }
 
+void watchDevice(void *args) {
+
+  char buff[100];
+
+  do {
+    if (!net.ready) { Sleep(4000); continue; }
+    if (!monitor_running) break;
+
+    if (getMacAddress(mon.mac, config.monip) == NO_ERROR) {
+      IFAddrToString(buff, mon.mac, sizeof(mon.mac));
+      sprintf(lb.log, "Monitor: found attached device with mac: %s", buff);
+      logMesg(lb.log, LOG_INFO);
+      mon.macfound = true;
+    } else {
+      logMesg("Monitor: no attached device responding yet", LOG_INFO);
+      mon.macfound = false;
+    }
+    Sleep(60000);
+  } while (monitor_running);
+
+  _endthread();
+  return;
+}
+
 void *main(void *args) {
 
   monitor_running = true;
@@ -59,7 +83,6 @@ void *main(void *args) {
       if (!adptr.ipset) {
         setAdptrIP(); stopThreads();
       }
-      logMesg("Monitor: Starting threads", LOG_INFO);
       startThreads();
     // record date of not found
     } else {
@@ -72,30 +95,6 @@ void *main(void *args) {
   } while (monitor_running);
 
   cleanup(1);
-}
-
-void watchDevice(void *args) {
-
-  char buff[100];
-
-  do {
-    if (!net.ready) { Sleep(4000); continue; }
-    if (!monitor_running) break;
-
-    if (getMacAddress(mon.mac, config.monip) == NO_ERROR) {
-      IFAddrToString(buff, mon.mac, sizeof(mon.mac));
-      sprintf(lb.log, "Monitor: found attached device with mac: %s", buff);
-      logMesg(lb.log, LOG_INFO);
-      mon.macfound = true;
-    } else {
-      logMesg("Monitor: no attached device responding yet", LOG_NOTICE);
-      mon.macfound = false;
-    }
-    Sleep(2000);
-  } while (monitor_running);
-
-  _endthread();
-  return;
 }
 
 }
