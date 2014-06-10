@@ -1,227 +1,375 @@
+// tunnel.cpp
+
+// TODO: allow multiple remote destinations
+// possibly also multiple local ports
+
 #if TUNNEL
 
 #include "core.h"
+#include "util.h"
 #include "net.h"
 #include "tunnel.h"
+#include "monitor.h"
+#include "http.h"
 
 bool tunnel_running = false;
 
 namespace tunnel {
 
-Sockets s;
 LocalBuffers lb;
+LocalData ld;
 NetworkData nd;
 
-int cleanup(int et) {
-  if (s.server) { shutdown(s.server, 2); closesocket(s.server); }
-  if (s.client) { shutdown(s.client, 2); closesocket(s.client); }
-  if (s.remote) { shutdown(s.remote, 2); closesocket(s.remote); }
+#if HTTP
+bool buildSP(void* lpParam) {
+
+  http::Data* h = http::initDP("Tunnel", lpParam, 0);
+
+  if (!h) return false;
+
+  int i=0, j=0;
+  char* fp = h->res.dp;
+  char* maxData = h->res.dp + h->res.memSize;
+
+  fp += sprintf(fp, "<h3>Tunnel</h3>\n");
+
+  if (!nd.tunConn[0].ready) {
+    fp += sprintf(fp, "<p>Waiting for interface</p>\n");
+    h->res.bytes = fp - h->res.dp;
+    return true;
+  }
+
+  fp += sprintf(fp, "<table border=\"0\" cellspacing=\"9\" width=\"800\"><tr><th>Local Host/Port</th><th>Remote Host/Port</th></tr>");
+
+  for (; i < MAX_SERVERS && net.listenServers[i]; i++)
+    for (; j < MAX_SERVERS; j++)
+      if (nd.tunConn[j].server == net.listenServers[i]) {
+        fp += sprintf(fp, "<tr><td>%s / %d</td>", IP2String(lb.tmp, nd.tunConn[j].server), config.lport);
+        fp += sprintf(fp, "<td>%s / %d</td></tr>", config.host, config.rport);
+      }
+  fp += sprintf(fp, "</table>\n<br/>\n<p>\n");
+
+  // TODO split active off per server connection..
+  if (ld.active)
+    fp += sprintf(fp, "Active with client %s\n", inet_ntoa(nd.cliConn.addr.sin_addr));
+  else
+    fp += sprintf(fp, "Waiting for client\n");
+
+  fp += sprintf(fp, "</p>\n");
+
+  h->res.bytes = fp - h->res.dp;
+  return true;
+}
+#endif
+
+int fd() {
+	unsigned int cfd = nd.cliConn.sock;
+	if (cfd < nd.remConn.sock) cfd = nd.remConn.sock;
+	return cfd + 1;
+  printf("fds = c %d r %d\r\n", cfd, nd.remConn.sock);
+}
+
+void remoteData() {
+
+  int cnt = recv(nd.remConn.sock, lb.data, sizeof(lb.data), 0);
+
+  if (cnt == SOCKET_ERROR) {
+    logMesg("TUNNEL remoteData socket error", LOG_DEBUG);
+    closesocket(nd.cliConn.sock);
+    closesocket(nd.remConn.sock);
+  }
+
+  if (cnt == 0) {
+    closesocket(nd.cliConn.sock);
+    closesocket(nd.remConn.sock);
+  }
+
+  if (cnt == SOCKET_ERROR || cnt == 0) {
+    ld.transm = false;
+    ld.active = false;
+  }
+
+  send(nd.cliConn.sock, lb.data, cnt, 0);
+
+  if (config.verbose && config.logging == LOG_DEBUG) {
+    printf("TUNNEL transmitting data from remote:\r\n");
+    fwrite(lb.data, sizeof(char), cnt, stdout);
+    fflush(stdout);
+  }
+
+}
+
+void clientData() {
+
+  int cnt = recv(nd.cliConn.sock, lb.data, sizeof(lb.data), 0);
+
+
+  if (cnt == SOCKET_ERROR) {
+    logMesg("TUNNEL clientData socket error", LOG_DEBUG);
+    closesocket(nd.cliConn.sock);
+    closesocket(nd.remConn.sock);
+  }
+
+  if (cnt == 0) {
+    closesocket(nd.cliConn.sock);
+    closesocket(nd.remConn.sock);
+  }
+
+  if (cnt == SOCKET_ERROR || cnt == 0) {
+    ld.active = false;
+    ld.transm = false;
+  }
+
+  send(nd.remConn.sock, lb.data, cnt, 0);
+
+  if (config.verbose && config.logging == LOG_DEBUG) {
+    printf("TUNNEL transmitting data from client:\r\n");
+    fwrite(lb.data, sizeof(char), cnt, stdout);
+    fflush(stdout);
+  }
+
+}
+
+int useTunnel() {
+
+  int nRet;
+  fd_set io;
+
+  ld.transm = true;
+
+  do {
+
+    FD_ZERO(&io);
+    FD_SET(nd.cliConn.sock, &io);
+    FD_SET(nd.remConn.sock, &io);
+
+    memset(lb.data, 0, sizeof(lb.data));
+
+    if (select(fd(), &io, NULL, NULL, NULL) == SOCKET_ERROR) {
+      if (WSAGetLastError() == WSAENOTSOCK)
+        sprintf(lb.log,"TUNNEL client/remote closed connection");
+      else
+        sprintf(lb.log,"TUNNEL useTunnel select error: %u", WSAGetLastError());
+      logMesg(lb.log, LOG_NOTICE);
+      break;
+    }
+
+    if (FD_ISSET(nd.cliConn.sock, &io)) clientData();
+    if (FD_ISSET(nd.remConn.sock, &io)) remoteData();
+
+  } while (ld.transm);
+
+  return 0;
+}
+
+int buildTunnel() {
+
+  memset(&nd.remConn, 0, sizeof(ConnType));
+
+  nd.remote_host = gethostbyname(config.host);
+
+  if (nd.remote_host == NULL) {
+    sprintf(lb.log, "TUNNEL could not resolve host %s", config.host);
+    logMesg(lb.log, LOG_NOTICE);
+    return 0;
+  }
+
+  nd.remConn.addr.sin_family = AF_INET;
+  nd.remConn.addr.sin_port = htons(config.rport);
+  memcpy(&nd.remConn.addr.sin_addr.s_addr, nd.remote_host->h_addr, nd.remote_host->h_length);
+  nd.remConn.sock = socket(AF_INET, SOCK_STREAM, 0);
+
+  if (nd.remConn.sock == INVALID_SOCKET) {
+    sprintf(lb.log, "TUNNEL buildTunnel socket error %u", WSAGetLastError());
+    logMesg(lb.log, LOG_NOTICE);
+    ld.active = false;
+    return 0;
+  }
+
+  if (connect(nd.remConn.sock, (sockaddr*) &nd.remConn.addr, sizeof(nd.remConn.addr)) == SOCKET_ERROR) {
+    sprintf(lb.log, "TUNNEL buildTunnel connect error %u", WSAGetLastError());
+    logMesg(lb.log, LOG_NOTICE);
+    ld.active = false;
+    return 0;
+  }
+
+  return 1;
+}
+
+int handleClient(MYBYTE sndx) {
+
+  int sockLen = sizeof(nd.cliConn.addr);
+
+  ld.active = true;
+
+  nd.cliConn.sock =
+    accept(nd.tunConn[sndx].sock, (sockaddr*) &nd.cliConn.addr, &sockLen);
+
+  if (nd.cliConn.sock == INVALID_SOCKET) {
+    sprintf(lb.log, "TUNNEL accept error %u", WSAGetLastError());
+    logMesg(lb.log, LOG_NOTICE);
+    return 0;
+  }
+
+  sprintf(lb.log, "TUNNEL request from %s", inet_ntoa(nd.cliConn.addr.sin_addr));
+  logMesg(lb.log, LOG_INFO);
+
+  return 1;
+}
+
+void cleanup(int et) {
+  int i; bool closed = false;
+  for (i=0; i < MAX_SERVERS && nd.tunConn[i].loaded; i++)
+    if (nd.tunConn[i].ready) {
+      closesocket(nd.tunConn[i].sock);
+      closed = true;
+    }
+  if (closed) logMesg("TUNNEL closed network connections", LOG_INFO);
   if (et) {
     tunnel_running = false;
     Sleep(1000);
     logMesg("Tunnel stopped", LOG_INFO);
     pthread_exit(NULL);
-  } else {
-    logMesg("Tunnel closed network connections", LOG_INFO);
-    return 0;
-  }
+  } else return;
+}
+
+void __cdecl init(void* arg) {
+
+  bool bindfailed;
+  int i, j, nRet;
+
+  if (!config.lport) config.lport = 80;
+  if (!config.rport) config.rport = 80;
+  if (!config.host) config.host = "localhost";
+
+  do {
+
+    cleanup(0);
+
+    memset(&nd, 0, sizeof(nd));
+
+    bindfailed = false;
+    ld.active = false;
+
+    for (i=0, j=0; j < MAX_SERVERS && net.listenServers[j]; j++) {
+
+      nd.tunConn[i].sock = socket(AF_INET, SOCK_STREAM, 0);
+
+      if (nd.tunConn[i].sock == INVALID_SOCKET) {
+        sprintf(lb.log, "TUNNEL socket error %u", WSAGetLastError());
+        logMesg(lb.log, LOG_NOTICE);
+        bindfailed = true;
+        continue;
+      }
+
+      nd.tunConn[i].addr.sin_family = AF_INET;
+      nd.tunConn[i].addr.sin_addr.s_addr = net.listenServers[j];
+      nd.tunConn[i].addr.sin_port = htons(config.lport);
+
+      setsockopt(nd.tunConn[i].sock, SOL_SOCKET, SO_REUSEADDR, "1", sizeof(int));
+
+      nRet = bind(nd.tunConn[i].sock, (sockaddr*) &nd.tunConn[i].addr, sizeof(nd.tunConn[i].addr));
+
+      if (nRet == SOCKET_ERROR) {
+        sprintf(lb.log, "TUNNEL cannot bind local port, error %u", WSAGetLastError());
+        logMesg(lb.log, LOG_NOTICE);
+        bindfailed = true;
+        closesocket(nd.tunConn[i].sock);
+        continue;
+      }
+
+      if (listen(nd.tunConn[i].sock, 1) == SOCKET_ERROR) {
+        sprintf(lb.log, "TUNNEL listen error %u", WSAGetLastError());
+        logMesg(lb.log, LOG_NOTICE);
+        bindfailed = true;
+        closesocket(nd.tunConn[i].sock);
+        continue;
+      }
+
+      if (nd.maxFD < nd.tunConn[i].sock) nd.maxFD = nd.tunConn[i].sock;
+
+      nd.tunConn[i].loaded = true;
+      nd.tunConn[i].ready = true;
+      nd.tunConn[i].server = net.listenServers[j];
+      nd.tunConn[i].mask = net.listenMasks[j];
+      nd.tunConn[i].port = config.lport;
+
+      i++;
+    }
+
+    nd.maxFD++;
+
+    if (bindfailed) net.failureCounts[TUNNEL_IDX]++;
+    else net.failureCounts[TUNNEL_IDX] = 0;
+
+    if (!nd.tunConn[0].ready) {
+      logMesg("TUNNEL no interface ready, waiting...", LOG_NOTICE);
+      continue;
+    }
+
+    for (i=0; i < MAX_SERVERS && net.listenServers[i]; i++) {
+      for (j=0; j < MAX_SERVERS; j++) {
+        if (nd.tunConn[j].server == net.listenServers[i]) {
+          sprintf(lb.log, "TUNNEL listening on: %s", IP2String(lb.tmp, net.listenServers[i]));
+          logMesg(lb.log, LOG_INFO);
+          break;
+        }
+      }
+    }
+
+  } while (dCWait(TUNNEL_IDX));
+
+  _endthread();
+  return;
 }
 
 void* main(void* arg) {
 
   tunnel_running = true;
 
-  logMesg("Tunnel starting", LOG_INFO);
+  logMesg("TUNNEL starting", LOG_INFO);
 
-  net.failureCounts[TUNNEL_IDX] = 0;
+  _beginthread(init, 0, 0);
 
-  while(!net.ready) Sleep(1000);
-
-  build_server();
-
-  do {
-    if (!net.ready) { Sleep(1000); continue; }
-    if (wait_for_clients()) if (build_tunnel()) use_tunnel();
-  }
-  while (tunnel_running);
-
-  cleanup(1);
-}
-
-int build_server(void) {
-
-  int optval = 1;
-
-  memset(&nd.sa, 0, sizeof(nd.sa));
-
-  nd.sa.sin_family = AF_INET;
-  nd.sa.sin_addr.s_addr = inet_addr(config.adptrip);
-  nd.sa.sin_port = htons(config.lport);
-  s.server = socket(AF_INET, SOCK_STREAM, 0);
-
-  if (s.server == INVALID_SOCKET) {
-    sprintf(lb.log, "Tunnel: build_server socket error %d", WSAGetLastError());
-    logMesg(lb.log, LOG_DEBUG);
-    net.failureCounts[TUNNEL_IDX]++;
-    cleanup(1);
-  }
-
-  if (setsockopt(s.server, SOL_SOCKET, SO_REUSEADDR, (const char *) &optval, sizeof(optval)) < 0) {
-    sprintf(lb.log, "Tunnel: build_server setsockopt(SO_REUSEADDR) error %d", WSAGetLastError());
-    logMesg(lb.log, LOG_DEBUG);
-    net.failureCounts[TUNNEL_IDX]++;
-    cleanup(1);
-  }
-
-  if (bind(s.server, (struct sockaddr *) &nd.sa, sizeof(nd.sa)) == SOCKET_ERROR) {
-    sprintf(lb.log, "Tunnel: build_server: bind() socket error %d", WSAGetLastError());
-    logMesg(lb.log, LOG_DEBUG);
-    net.failureCounts[TUNNEL_IDX]++;
-    cleanup(1);
-  }
-
-  if (listen(s.server, 1) == SOCKET_ERROR) {
-    sprintf(lb.log, "Tunnel: build_server: listen() socket error %d", WSAGetLastError());
-    logMesg(lb.log, LOG_DEBUG);
-    net.failureCounts[TUNNEL_IDX]++;
-    cleanup(1);
-  }
-
-  return 0;
-}
-
-int wait_for_clients(void) {
-
-  int client_addr_size;
-  client_addr_size = sizeof(struct sockaddr_in);
-  s.client = accept(s.server, (struct sockaddr *) &nd.ca, &client_addr_size);
-
-  if (!tunnel_running) return 0;
-
-  if (s.client == INVALID_SOCKET) {
-    logMesg("Tunnel: wait_for_clients accept() error", LOG_DEBUG);
-    return 0;
-  }
-
-  if (config.logging) {
-    sprintf(lb.log, "Tunnel: request from %s", inet_ntoa(nd.ca.sin_addr));
-    logMesg(lb.log, LOG_NOTICE);
-  }
-
-  return 1;
-}
-
-int build_tunnel(void) {
-
-  lb.remote_host = gethostbyname(config.host);
-
-  if (lb.remote_host == NULL) {
-    logMesg("Tunnel: build_tunnel: gethostbyname()", LOG_DEBUG);
-    return 0;
-  }
-
-  memset(&nd.ra, 0, sizeof(nd.ra));
-  nd.ra.sin_family = AF_INET;
-  nd.ra.sin_port = htons(config.rport);
-  memcpy(&nd.ra.sin_addr.s_addr, lb.remote_host->h_addr, lb.remote_host->h_length);
-  s.remote = socket(AF_INET, SOCK_STREAM, 0);
-
-  if (s.remote == INVALID_SOCKET) {
-    logMesg("Tunnel: build_tunnel: socket()", LOG_DEBUG);
-    return 0;
-  }
-
-  if (connect(s.remote, (struct sockaddr *) &nd.ra, sizeof(nd.ra)) == SOCKET_ERROR) {
-    logMesg("Tunnel: build_tunnel: connect()", LOG_DEBUG);
-    return 0;
-  }
-
-  return 1;
-}
-
-int use_tunnel(void) {
+  int i;
+  fd_set readfds;
+  timeval tv = { 20, 0 };
 
   do {
 
-    FD_ZERO(&lb.io);
-    FD_SET(s.client, &lb.io);
-    FD_SET(s.remote, &lb.io);
+    net.busy[TUNNEL_IDX] = false;
 
-    memset(lb.data, 0, sizeof(lb.data));
+    if (!nd.tunConn[0].ready) { Sleep(1000); continue; }
+    if (!net.ready[TUNNEL_IDX]) { Sleep(1000); continue; }
+    if (net.refresh) { Sleep(1000); continue; }
 
-    if (select(fd(), &lb.io, NULL, NULL, NULL) == SOCKET_ERROR) {
-      logMesg("Tunnel: use_tunnel: select()", LOG_DEBUG);
-      break;
-    }
+    FD_ZERO(&readfds);
 
-    if (FD_ISSET(s.client, &lb.io)) {
+    for (i=0; i < MAX_SERVERS && nd.tunConn[i].ready; i++)
+      FD_SET(nd.tunConn[i].sock, &readfds);
 
-      int count = recv(s.client, lb.data, sizeof(lb.data), 0);
+    if (select(nd.maxFD, &readfds, NULL, NULL, &tv) != SOCKET_ERROR) {
 
-      if (count == SOCKET_ERROR) {
-        logMesg("Tunnel: use_tunnel: recv(s.client)", LOG_DEBUG);
-        closesocket(s.client);
-        closesocket(s.remote);
-        return 1;
+      ld.t = time(NULL);
+
+      if (net.ready[TUNNEL_IDX]) {
+
+        net.busy[TUNNEL_IDX] = true;
+
+        for (i=0; i < MAX_SERVERS && nd.tunConn[i].ready; i++)
+
+          if (FD_ISSET(nd.tunConn[i].sock, &readfds)) {
+            while(ld.active) Sleep(1000);
+            if (handleClient(i)) if (buildTunnel()) useTunnel();
+          }
+
       }
 
-      if (count == 0) {
-        closesocket(s.client);
-        closesocket(s.remote);
-        return 0;
-      }
+    } else ld.t = time(NULL);
 
-      send(s.remote, lb.data, count, 0);
-
-      if (config.logging == LOG_DEBUG) {
-        printf("> %s > ", get_current_timestamp());
-        fwrite(lb.data, sizeof(char), count, stdout);
-        fflush(stdout);
-      }
-    }
-
-    if (FD_ISSET(s.remote, &lb.io)) {
-
-      int count = recv(s.remote, lb.data, sizeof(lb.data), 0);
-
-      if (count == SOCKET_ERROR) {
-        logMesg("Tunnel: use_tunnel: recv(rc.remote_socket)", LOG_DEBUG);
-        closesocket(s.client);
-        closesocket(s.remote);
-        return 1;
-      }
-
-      if (count == 0) {
-        closesocket(s.client);
-        closesocket(s.remote);
-        return 0;
-      }
-
-      send(s.client, lb.data, count, 0);
-
-      if (config.logging) {
-        fwrite(lb.data, sizeof(char), count, stdout);
-        fflush(stdout);
-      }
-    }
   } while (tunnel_running);
 
-  return 0;
-}
-
-int fd(void) {
-	unsigned int fd = s.client;
-	if (fd < s.remote) { fd = s.remote; }
-  //printf("fds = c %d r %d\r\n", s.client, s.remote);
-	return fd + 1;
-}
-
-char *get_current_timestamp(void) {
-	static char date_str[20];
-	time_t date;
-	time(&date);
-	strftime(date_str, sizeof(date_str), "%Y-%m-%d %H:%M:%S", localtime(&date));
-	return date_str;
+  cleanup(1);
 }
 
 }

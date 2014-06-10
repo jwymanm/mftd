@@ -3,6 +3,7 @@
 */
 
 #include "core.h"
+#include "util.h"
 #include "net.h"
 
 Adapter adptr;
@@ -173,6 +174,7 @@ bool getAdapterData()  {
       if (pUnicast != NULL) {
         for (i = 0; pUnicast != NULL; i++) {
           WSAAddressToStringA(pUnicast->Address.lpSockaddr, pUnicast->Address.iSockaddrLength, NULL, ipstr, &size);
+          // TODO add netmask matcher also...
           if (strcmp(ipstr, config.adptrip) == 0) adptr.ipset = true;
           pUnicast = pUnicast->Next;
         }
@@ -228,11 +230,17 @@ MYDWORD* findServer(MYDWORD* array, MYBYTE cnt, MYDWORD ip) {
   return 0;
 }
 
-void setServers() {
+void setServerIFs() {
 
   SOCKET sd = WSASocket(PF_INET, SOCK_DGRAM, 0, 0, 0, 0);
 
   if (sd == INVALID_SOCKET) return;
+
+  if (getAdapterData())
+    if (!adptr.ipset) {
+      setAdptrIP();
+      Sleep(2000);
+    }
 
   INTERFACE_INFO InterfaceList[MAX_SERVERS];
   unsigned long nBytesReturned;
@@ -252,42 +260,167 @@ void setServers() {
 
   closesocket(sd);
 
-  net.listenServers[0] = inet_addr(config.adptrip);
-  net.listenMasks[0] = inet_addr(config.netmask);
+  PIP_ADAPTER_INFO pAdapterInfo;
+  PIP_ADAPTER_INFO pAdapter;
+
+  pAdapterInfo = (IP_ADAPTER_INFO*) calloc(1, sizeof(IP_ADAPTER_INFO));
+  DWORD ulOutBufLen = sizeof(IP_ADAPTER_INFO);
+
+  if (GetAdaptersInfo(pAdapterInfo, &ulOutBufLen) == ERROR_BUFFER_OVERFLOW) {
+    free(pAdapterInfo);
+    pAdapterInfo = (IP_ADAPTER_INFO*)calloc(1, ulOutBufLen);
+  }
+
+  if ((GetAdaptersInfo(pAdapterInfo, &ulOutBufLen)) == NO_ERROR) {
+    pAdapter = pAdapterInfo;
+    while (pAdapter) {
+      if (!pAdapter->DhcpEnabled) {
+        IP_ADDR_STRING *sList = &pAdapter->IpAddressList;
+        while (sList) {
+          DWORD iaddr = inet_addr(sList->IpAddress.String);
+          if (iaddr) {
+            for (MYBYTE k = 0; k < MAX_SERVERS; k++) {
+              if (net.staticServers[k] == iaddr) break;
+              else if (!net.staticServers[k]) {
+                net.staticServers[k] = iaddr;
+                net.staticMasks[k] = inet_addr(sList->IpMask.String);
+                break;
+              }
+            }
+          }
+          sList = sList->Next;
+        }
+      }
+      pAdapter = pAdapter->Next;
+    }
+    free(pAdapterInfo);
+  }
+
+  if (config.bindonly) {
+    if (getAdapterData()) {
+      logMesg("bindonly set, using adapter interface ip only", LOG_INFO);
+      net.listenServers[0] = inet_addr(config.adptrip);
+      net.listenMasks[0] = inet_addr(config.netmask);
+    } else {
+      logMesg("bindonly set but adapter interface is not available", LOG_NOTICE);
+    }
+    return;
+  }
+
+  if (net.staticServers[0]) {
+    logMesg("using static interface ip address(es): ", LOG_INFO);
+    int i=0;
+    bool nomatch = true;
+    for (; i < sizeof(net.staticServers)/sizeof(*net.staticServers), net.staticServers[i]; i++) {
+      sprintf(lb.log, "  %s", IP2String(lb.tmp, net.staticServers[i]));
+      logMesg(lb.log, LOG_INFO);
+      net.listenServers[i] = net.staticServers[i];
+      net.listenMasks[i] = net.staticServers[i];
+      if (net.staticServers[i] == inet_addr(config.adptrip)) nomatch = false;
+    }
+    if (config.adptrip && nomatch) {
+      logMesg("no match for adapter ip under static interfaces", LOG_NOTICE);
+    }
+  } else {
+    if (config.adptrip) {
+      logMesg("no static interfaces found, attempting to use adapter ip", LOG_NOTICE);
+      net.listenServers[0] = inet_addr(config.adptrip);
+      net.listenMasks[0] = inet_addr(config.netmask);
+    } else {
+      logMesg("no static interfaces found and no adapter ip", LOG_NOTICE);
+    }
+  }
 
   return;
 }
 
-bool detectChange() {
-
-  logMesg("Waiting for network changes", LOG_INFO);
-
-  int nfctot =
+int detectFailure() {
+  return
     net.failureCounts[MONITOR_IDX] +
     net.failureCounts[FDNS_IDX] +
     net.failureCounts[TUNNEL_IDX] +
-    net.failureCounts[DHCP_IDX];
-   // net.failureCounts[HTTP_IDX];
+    net.failureCounts[DHCP_IDX] +
+    net.failureCounts[HTTP_IDX];
+}
 
-  if (nfctot) {
-    DWORD eventWait = (DWORD) (1000 * pow(2, nfctot));
-    sprintf(lb.log, "detectChange sleeping %d msecs and retrying failed threads", eventWait);
+bool detectBusy() {
+  if (net.busy[MONITOR_IDX] +
+      net.busy[FDNS_IDX] +
+      net.busy[TUNNEL_IDX] +
+      net.busy[DHCP_IDX] +
+      net.busy[HTTP_IDX])
+    return true;
+  else
+    return false;
+}
+
+void stopDC() {
+
+  if (ge.dCol.hEvent != NULL)
+    CancelIPChangeNotify(&ge.dCol);
+
+  return;
+}
+
+// detectChange waiting function
+bool dCWait(int idx) {
+
+  int fc = net.failureCounts[idx];
+  char* sname = gd.serviceNames[idx];
+  DWORD eventWait;
+
+  net.ready[idx] = true;
+
+  if (fc) {
+    // wait up to max 40 tries and then reset fc
+    if (fc >= 40) fc = net.failureCounts[idx] = 0;
+    eventWait = 2000 * fc;
+    sprintf(lb.log, "detectChange sleeping %d msecs and retrying failed service %s", eventWait, sname);
     logMesg(lb.log, LOG_INFO);
-    sprintf(lb.log, "failureCounts: MONITOR: %d FDNS: %d TUNNEL: %d DHCP: %d HTTP: \r\n",
-      net.failureCounts[MONITOR_IDX], net.failureCounts[FDNS_IDX], net.failureCounts[TUNNEL_IDX], net.failureCounts[DHCP_IDX]);
-    //net.failureCounts[HTTP_IDX]);
+    sprintf(lb.log, "serviceName: %s, failureCount: %d\r\n", sname, fc);
     logMesg(lb.log, LOG_DEBUG);
     Sleep(eventWait);
-    net.ready = false;
-    return true;
+    net.ready[idx] = false;
+    while (net.busy[idx]) Sleep(1000);
+    if (!config.bindonly || (config.bindonly && getAdapterData()))
+      return true;
+    net.failureCounts[idx] = 0;
   }
 
-  if (getAdapterData()) net.ready = true;
+  sprintf(lb.log, "Service %s waiting for network changes", sname);
+  logMesg(lb.log, LOG_INFO);
 
-  ge.net = NULL;
+  while (!net.refresh) Sleep(1000);
+
+  net.ready[idx] = false;
+
+  while (net.busy[idx]) Sleep(1000);
+
+  while (net.refresh) {
+    sprintf(lb.log, "%s waiting on detectChange", sname);
+    logMesg(lb.log, LOG_DEBUG);
+    Sleep(1000);
+  }
+
+  if (!config.isExiting) {
+    sprintf(lb.log, "Network event, service %s refreshing", sname);
+    logMesg(lb.log, LOG_INFO);
+  } else return false;
+
+  return true;
+}
+
+bool detectChange() {
+
+  bool adptrOk = getAdapterData();
+  bool hasStatic = net.staticServers[0];
+
+  net.refresh = false;
+
+  HANDLE hand = NULL;
   ge.dCol.hEvent = WSACreateEvent();
 
-  if (NotifyAddrChange(&ge.net, &ge.dCol) != NO_ERROR) {
+  if (NotifyAddrChange(&hand, &ge.dCol) != NO_ERROR) {
     if (WSAGetLastError() != WSA_IO_PENDING) {
       WSACloseEvent(ge.dCol.hEvent);
       Sleep(1000);
@@ -295,19 +428,32 @@ bool detectChange() {
     }
   }
 
-  // change to infinite?
+  logMesg("Waiting for network interface changes", LOG_INFO);
+
   if (WaitForSingleObject(ge.dCol.hEvent, UINT_MAX) == WAIT_OBJECT_0)
     WSACloseEvent(ge.dCol.hEvent);
 
-  net.ready = false;
+  net.refresh = true;
 
-  if (!config.isExiting)
-    logMesg("Network event, waiting to refresh services", LOG_NOTICE);
-  else return false;
+  Sleep(2000);
 
-  /*  Wait 8 seconds for network to finish changing */
-  Sleep(8000);
-  getHostName(net.hostname); // just in case hostname changed
+  if (!config.isExiting) {
+    logMesg("Network event, refreshing", LOG_NOTICE);
+    while (detectBusy()) {
+      sprintf(lb.log, "net.busy: MONITOR: %d FDNS: %d TUNNEL: %d DHCP: %d HTTP: %d",
+        net.busy[0], net.busy[1], net.busy[2], net.busy[3], net.busy[4], net.busy[5]);
+      logMesg(lb.log, LOG_DEBUG);
+      Sleep(1000);
+    }
+  } else {
+    net.refresh = false;
+    return false;
+  }
+
+  setServerIFs();
+
+  getHostName(net.hostname);
+
   return true;
 }
 
@@ -320,310 +466,29 @@ int netExit() {
 }
 
 int netInit() {
+
   getHostName(net.hostname);
-  sprintf(lb.log, "Using hostname %s", net.hostname);
+  sprintf(lb.log, "hostname %s", net.hostname);
   logMesg(lb.log, LOG_NOTICE);
+
   adptr.desc = (LPWSTR) calloc(sizeof(wchar_t), (MAX_ADAPTER_DESCRIPTION_LENGTH + 4));
   adptr.name = (PCHAR) calloc(1, MAX_ADAPTER_NAME_LENGTH + 4);
   adptr.fname = (PCHAR) calloc(1, MAX_ADAPTER_NAME_LENGTH + 4);
   adptr.wfname = (PWCHAR) calloc(sizeof(wchar_t), (MAX_ADAPTER_NAME_LENGTH + 4));
+
   int ifdesclen = MultiByteToWideChar(CP_ACP, 0, config.ifname, -1, adptr.desc, 0);
   if (ifdesclen > 0)
     MultiByteToWideChar(CP_ACP, 0, config.ifname, -1, adptr.desc, ifdesclen);
-  MYWORD wVersionReq = MAKEWORD(1, 1);
-  WSAStartup(wVersionReq, &gd.wsa);
-  if (gd.wsa.wVersion != wVersionReq)
+
+  MYWORD wVersionReq = MAKEWORD(1,1);
+  WSAStartup(wVersionReq, &net.wsa);
+  if (net.wsa.wVersion != wVersionReq)
     logMesg("WSAStartup error", LOG_INFO);
+
+  if (config.adptrip)
+    if (!config.netmask) config.netmask = "255.255.255.0";
+
+  setServerIFs();
+
   return 0;
 }
-
-#if 0
-// Left here for example code for now
-
-char  adptr_ip[255];
-char  adptr_name[MAX_ADAPTER_NAME_LENGTH + 4];
-DWORD adptr_idx;
-
-int getAdptrInfo() {
-
-  PIP_ADAPTER_INFO pAdapterInfo;
-  PIP_ADAPTER_INFO pAdapter = NULL;
-  DWORD dwRetVal = 0;
-  UINT i;
-
-  ULONG ulOutBufLen = sizeof (IP_ADAPTER_INFO);
-  pAdapterInfo = (IP_ADAPTER_INFO *) MALLOC(sizeof (IP_ADAPTER_INFO));
-
-  if (pAdapterInfo == NULL) { return false; }
-
-  if (GetAdaptersInfo(pAdapterInfo, &ulOutBufLen) == ERROR_BUFFER_OVERFLOW) {
-    FREE(pAdapterInfo);
-    pAdapterInfo = (IP_ADAPTER_INFO *) MALLOC(ulOutBufLen);
-    if (pAdapterInfo == NULL) { return false; }
-  }
-
-  if ((dwRetVal = GetAdaptersInfo(pAdapterInfo, &ulOutBufLen)) == NO_ERROR) {
-    pAdapter = pAdapterInfo;
-    while (pAdapter) {
-      if (!strcmp(pAdapter->Description, config.ifname)) {
-        memcpy (adptr_ip, pAdapter->IpAddressList.IpAddress.String, strlen(pAdapter->IpAddressList.IpAddress.String) + 1);
-        adptr_idx = pAdapter->Index;
-        strcpy(adptr_name, pAdapter->AdapterName);
-        if (pAdapterInfo) FREE(pAdapterInfo);
-        return true;
-      } else { pAdapter = pAdapter->Next; }
-    }
-  }
-
-  if (pAdapterInfo) FREE(pAdapterInfo);
-  return false;
-}
-
-int getAdptrAddr()  {
-
-  DWORD dwSize = 0;
-  DWORD dwRetVal = 0;
-  unsigned int i = 0;
-  ULONG flags = GAA_FLAG_INCLUDE_PREFIX;
-  // default to unspecified address family (both)
-  ULONG family = AF_UNSPEC;
-  LPVOID lpMsgBuf = NULL;
-  PIP_ADAPTER_ADDRESSES pAddresses = NULL;
-  ULONG outBufLen = 0;
-  ULONG Iterations = 0;
-  PIP_ADAPTER_ADDRESSES pCurrAddresses = NULL;
-  PIP_ADAPTER_UNICAST_ADDRESS pUnicast = NULL;
-  PIP_ADAPTER_ANYCAST_ADDRESS pAnycast = NULL;
-  PIP_ADAPTER_MULTICAST_ADDRESS pMulticast = NULL;
-  IP_ADAPTER_DNS_SERVER_ADDRESS *pDnServer = NULL;
-  IP_ADAPTER_PREFIX *pPrefix = NULL;
-
-  //family = AF_INET;
-  //family = AF_INET6;
-
-  outBufLen = WORKING_BUFFER_SIZE;
-
-  do {
-
-    pAddresses = (IP_ADAPTER_ADDRESSES *) MALLOC(outBufLen);
-    if (pAddresses == NULL) return 0;
-
-    dwRetVal = GetAdaptersAddresses(family, flags, NULL, pAddresses, &outBufLen);
-
-    if (dwRetVal == ERROR_BUFFER_OVERFLOW) { FREE(pAddresses); pAddresses = NULL; }
-    else break;
-
-    Iterations++;
-
-  } while ((dwRetVal == ERROR_BUFFER_OVERFLOW) && (Iterations < MAX_TRIES));
-
-  if (dwRetVal == NO_ERROR) {
-
-    pCurrAddresses = pAddresses;
-
-    while (pCurrAddresses) {
-
-      printf("\tLength of the IP_ADAPTER_ADDRESS struct: %ld\n", pCurrAddresses->Length);
-      printf("\tIfIndex (IPv4 interface): %u\n", pCurrAddresses->IfIndex);
-      printf("\tAdapter name: %s\n", pCurrAddresses->AdapterName);
-
-      pUnicast = pCurrAddresses->FirstUnicastAddress;
-      if (pUnicast != NULL) {
-        for (i = 0; pUnicast != NULL; i++) pUnicast = pUnicast->Next;
-        printf("\tNumber of Unicast Addresses: %d\n", i);
-      } else printf("\tNo Unicast Addresses\n");
-
-      pAnycast = pCurrAddresses->FirstAnycastAddress;
-      if (pAnycast) {
-        for (i = 0; pAnycast != NULL; i++) pAnycast = pAnycast->Next;
-        printf("\tNumber of Anycast Addresses: %d\n", i);
-      } else printf("\tNo Anycast Addresses\n");
-
-      pMulticast = pCurrAddresses->FirstMulticastAddress;
-      if (pMulticast) {
-        for (i = 0; pMulticast != NULL; i++) pMulticast = pMulticast->Next;
-        printf("\tNumber of Multicast Addresses: %d\n", i);
-      } else printf("\tNo Multicast Addresses\n");
-
-      pDnServer = pCurrAddresses->FirstDnsServerAddress;
-      if (pDnServer) {
-        for (i = 0; pDnServer != NULL; i++) pDnServer = pDnServer->Next;
-        printf("\tNumber of DNS Server Addresses: %d\n", i);
-      } else printf("\tNo DNS Server Addresses\n");
-
-      printf("\tDNS Suffix: %wS\n", pCurrAddresses->DnsSuffix);
-      printf("\tDescription: %wS\n", pCurrAddresses->Description);
-      printf("\tFriendly name: %wS\n", pCurrAddresses->FriendlyName);
-
-      if (pCurrAddresses->PhysicalAddressLength != 0) {
-        printf("\tPhysical address: ");
-        for (i = 0; i < (int) pCurrAddresses->PhysicalAddressLength; i++) {
-          if (i == (pCurrAddresses->PhysicalAddressLength - 1))
-            printf("%.2X\n", (int) pCurrAddresses->PhysicalAddress[i]);
-          else printf("%.2X-", (int) pCurrAddresses->PhysicalAddress[i]);
-        }
-      }
-      printf("\tFlags: %ld\n", pCurrAddresses->Flags);
-      printf("\tMtu: %lu\n", pCurrAddresses->Mtu);
-      printf("\tIfType: %ld\n", pCurrAddresses->IfType);
-      printf("\tOperStatus: %ld\n", pCurrAddresses->OperStatus);
-      printf("\tIpv6IfIndex (IPv6 interface): %u\n", pCurrAddresses->Ipv6IfIndex);
-      printf("\tZoneIndices (hex): ");
-      for (i = 0; i < 16; i++) printf("%lx ", pCurrAddresses->ZoneIndices[i]); printf("\n");
-
-      // printf("\tTransmit link speed: %I64u\n", pCurrAddresses->TransmitLinkSpeed);
-      //printf("\tReceive link speed: %I64u\n", pCurrAddresses->ReceiveLinkSpeed);
-
-      pPrefix = pCurrAddresses->FirstPrefix;
-      if (pPrefix) {
-        for (i = 0; pPrefix != NULL; i++) pPrefix = pPrefix->Next;
-        printf("\tNumber of IP Adapter Prefix entries: %d\n", i);
-      } else printf("\tNumber of IP Adapter Prefix entries: 0\n");
-
-      printf("\n");
-
-      pCurrAddresses = pCurrAddresses->Next;
-    }
-  } else {
-    if (dwRetVal == ERROR_NO_DATA)
-      logMesg("Net: No addresses were found for the requested parameters", LOG_NOTICE);
-    else
-      showError(dwRetVal);
-    }
-  }
-
-  if (pAddresses) FREE(pAddresses);
-  return 0;
-}
-
-int lkupIF() {
-   // Declare and initialize variables.
-
-    DWORD dwSize = 0;
-    DWORD dwRetVal = 0;
-
-    unsigned int i, j;
-
-    /* variables used for GetIfTable and GetIfEntry */
-    MIB_IFTABLE *pIfTable;
-    MIB_IFROW *pIfRow;
-
-    // Allocate memory for our pointers.
-    pIfTable = (MIB_IFTABLE *) MALLOC(sizeof (MIB_IFTABLE));
-    if (pIfTable == NULL) {
-        printf("Error allocating memory needed to call GetIfTable\n");
-        return 1;
-    }
-    // Make an initial call to GetIfTable to get the
-    // necessary size into dwSize
-    dwSize = sizeof (MIB_IFTABLE);
-    if (GetIfTable(pIfTable, &dwSize, FALSE) == ERROR_INSUFFICIENT_BUFFER) {
-        FREE(pIfTable);
-        pIfTable = (MIB_IFTABLE *) MALLOC(dwSize);
-        if (pIfTable == NULL) {
-            printf("Error allocating memory needed to call GetIfTable\n");
-            return 1;
-        }
-    }
-    // Make a second call to GetIfTable to get the actual
-    // data we want.
-    if ((dwRetVal = GetIfTable(pIfTable, &dwSize, FALSE)) == NO_ERROR) {
-        printf("\tNum Entries: %ld\n\n", pIfTable->dwNumEntries);
-        for (i = 0; i < pIfTable->dwNumEntries; i++) {
-            pIfRow = (MIB_IFROW *) & pIfTable->table[i];
-            printf("\tIndex[%d]:\t %ld\n", i, pIfRow->dwIndex);
-            printf("\tInterfaceName[%d]:\t %ws", i, pIfRow->wszName);
-            printf("\n");
-            printf("\tDescription[%d]:\t ", i);
-            for (j = 0; j < pIfRow->dwDescrLen; j++)
-                printf("%c", pIfRow->bDescr[j]);
-            printf("\n");
-            printf("\tType[%d]:\t ", i);
-            switch (pIfRow->dwType) {
-            case IF_TYPE_OTHER:
-                printf("Other\n");
-                break;
-            case IF_TYPE_ETHERNET_CSMACD:
-                printf("Ethernet\n");
-                break;
-            case IF_TYPE_ISO88025_TOKENRING:
-                printf("Token Ring\n");
-                break;
-            case IF_TYPE_PPP:
-                printf("PPP\n");
-                break;
-            case IF_TYPE_SOFTWARE_LOOPBACK:
-                printf("Software Lookback\n");
-                break;
-            case IF_TYPE_ATM:
-                printf("ATM\n");
-                break;
-            case IF_TYPE_IEEE80211:
-                printf("IEEE 802.11 Wireless\n");
-                break;
-            case IF_TYPE_TUNNEL:
-                printf("Tunnel type encapsulation\n");
-                break;
-            case IF_TYPE_IEEE1394:
-                printf("IEEE 1394 Firewire\n");
-                break;
-            default:
-                printf("Unknown type %ld\n", pIfRow->dwType);
-                break;
-            }
-            printf("\tMtu[%d]:\t\t %ld\n", i, pIfRow->dwMtu);
-            printf("\tSpeed[%d]:\t %ld\n", i, pIfRow->dwSpeed);
-            printf("\tPhysical Addr:\t ");
-            if (pIfRow->dwPhysAddrLen == 0)
-                printf("\n");
-            for (j = 0; j < pIfRow->dwPhysAddrLen; j++) {
-                if (j == (pIfRow->dwPhysAddrLen - 1))
-                    printf("%.2X\n", (int) pIfRow->bPhysAddr[j]);
-                else
-                    printf("%.2X-", (int) pIfRow->bPhysAddr[j]);
-            }
-            printf("\tAdmin Status[%d]:\t %ld\n", i, pIfRow->dwAdminStatus);
-            printf("\tOper Status[%d]:\t ", i);
-            switch (pIfRow->dwOperStatus) {
-            case IF_OPER_STATUS_NON_OPERATIONAL:
-                printf("Non Operational\n");
-                break;
-            case IF_OPER_STATUS_UNREACHABLE:
-                printf("Unreachable\n");
-                break;
-            case IF_OPER_STATUS_DISCONNECTED:
-                printf("Disconnected\n");
-                break;
-            case IF_OPER_STATUS_CONNECTING:
-                printf("Connecting\n");
-                break;
-            case IF_OPER_STATUS_CONNECTED:
-                printf("Connected\n");
-                break;
-            case IF_OPER_STATUS_OPERATIONAL:
-                printf("Operational\n");
-                break;
-            default:
-                printf("Unknown status %ld\n", pIfRow->dwAdminStatus);
-                break;
-            }
-            printf("\n");
-        }
-    } else {
-        printf("GetIfTable failed with error: \n", dwRetVal);
-        if (pIfTable != NULL) {
-            FREE(pIfTable);
-            pIfTable = NULL;
-        }
-        return 1;
-        // Here you can use FormatMessage to find out why
-        // it failed.
-    }
-    if (pIfTable != NULL) {
-        FREE(pIfTable);
-        pIfTable = NULL;
-    }
-    return 0;
-}
-
-#endif

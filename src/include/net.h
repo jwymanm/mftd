@@ -15,30 +15,35 @@ typedef struct {
 } Adapter;
 
 typedef struct {
-  bool ready;
-  bool busy;
   char hostname[128];
-  int failureCounts[5];
+  bool refresh;
+  bool busy[SERVICETOTAL];
+  bool ready[SERVICETOTAL];
+  int failureCounts[SERVICETOTAL];
   MYDWORD allServers[MAX_SERVERS];
   MYDWORD listenServers[MAX_SERVERS];
   MYDWORD listenMasks[MAX_SERVERS];
+  MYDWORD staticServers[MAX_SERVERS];
+  MYDWORD staticMasks[MAX_SERVERS];
+  WSADATA wsa;
 } Network;
 
-struct NET4Address {
-  union {
-   unsigned ip:32;
-   MYBYTE octate[4];
-  };
-};
-
-struct ConnType {
+typedef struct {
   SOCKET sock;
   SOCKADDR_IN addr;
   MYDWORD server;
   MYWORD port;
+  MYDWORD mask;
   bool loaded;
   bool ready;
-};
+} ConnType;
+
+typedef struct {
+  union {
+    unsigned ip:32;
+    MYBYTE octate[4];
+  };
+} NET4Address;
 
 extern "C" Adapter adptr;
 extern "C" Network net;
@@ -53,9 +58,11 @@ MYDWORD getClassNetwork(MYDWORD ip);
 void getHostName(char *hn);
 bool getAdapterData();
 int setAdptrIP();
-bool detectChange();
 MYDWORD *findServer(MYDWORD* array, MYBYTE cnt, MYDWORD ip);
 MYDWORD *addServer(MYDWORD* array, MYBYTE maxServers, MYDWORD ip);
-void setServers();
-int netInit();
+void setServerIFs();
+void stopDC();
+bool dCWait(int idx);
+bool detectChange();
 int netExit();
+int netInit();

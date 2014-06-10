@@ -1,11 +1,9 @@
-#if MONITOR
+// monitor/main.cpp
+// a recording system of how often we actually see the interface vs seeing the mac
+// this tells us where any problem lies in communication
+// save and report this information to an url
 
-/*
-   monitor/main.cpp
-   a recording system of how often we actually see the interface vs seeing the mac
-   this tells us where any problem lies in communication
-   save and report this information to an url
-*/
+#if MONITOR
 
 #include "core.h"
 #include "net.h"
@@ -17,9 +15,10 @@ namespace monitor {
 
 Monitor mon;
 LocalBuffers lb;
+LocalData ld;
 
 void start() {
-  pthread_create(&threads[MONITOR_TIDX], NULL, main, NULL);
+  pthread_create(&gd.threads[MONITOR_TIDX], NULL, main, NULL);
 }
 
 void stop() {
@@ -38,13 +37,11 @@ int cleanup (int et) {
   }
 }
 
-void watchDevice(void *args) {
+void __cdecl init(void* arg) {
 
   char buff[100];
 
   do {
-    if (!net.ready) { Sleep(4000); continue; }
-    if (!monitor_running) break;
 
     if (getMacAddress(mon.mac, config.monip) == NO_ERROR) {
       IFAddrToString(buff, mon.mac, sizeof(mon.mac));
@@ -55,7 +52,9 @@ void watchDevice(void *args) {
       logMesg("Monitor: no attached device responding yet", LOG_INFO);
       mon.macfound = false;
     }
+
     Sleep(60000);
+
   } while (monitor_running);
 
   _endthread();
@@ -66,32 +65,30 @@ void *main(void *args) {
 
   monitor_running = true;
 
-  net.failureCounts[MONITOR_IDX] = 0;
-
   logMesg("Monitor starting", LOG_INFO);
 
-  _beginthread(watchDevice, 0, NULL);
-
-  sprintf(lb.log, "Monitor: Looking for adapter with description \"%s\"", config.ifname);
-  logMesg(lb.log, LOG_INFO);
+  _beginthread(init, 0, NULL);
 
   do {
+
+    net.busy[MONITOR_IDX] = false;
+
+    if (!net.ready[MONITOR_IDX]) { Sleep(1000); continue; }
+
     // record date of found
     if (getAdapterData()) {
       sprintf(lb.log, "Monitor: Adapter with description \"%s\" found", config.ifname);
       logMesg(lb.log, LOG_INFO);
       if (!adptr.ipset) {
-        setAdptrIP(); stopThreads();
+        setAdptrIP(); core::stopThreads();
       }
-      startThreads();
+      core::startThreads();
     // record date of not found
     } else {
       sprintf(lb.log, "Monitor: Waiting for adapter with description \"%s\" to be available", config.ifname);
       logMesg(lb.log, LOG_INFO);
-      logMesg("Monitor: Stopping threads", LOG_INFO);
-      stopThreads();
     }
-    detectChange();
+
   } while (monitor_running);
 
   cleanup(1);

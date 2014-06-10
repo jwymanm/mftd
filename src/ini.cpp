@@ -1,9 +1,12 @@
+// ini.cpp
+
 #include "core.h"
+#include "util.h"
 #include "ini.h"
 
 int ini_handler(void* cfg, const char* section, const char* name, const char* value) {
 
-  Configuration* pconfig = (Configuration*)cfg;
+  GConfiguration* pconfig = (GConfiguration*)cfg;
 
   if (MATCH("Services", "Monitor")) {
     pconfig->monitor = atoi(value);
@@ -26,6 +29,8 @@ int ini_handler(void* cfg, const char* section, const char* name, const char* va
     pconfig->netmask = strdup(value);
   } else if (MATCH("Adapter", "static")) {
     pconfig->setstatic = atoi(value);
+  } else if (MATCH("Adapter", "bindonly")) {
+    pconfig->bindonly = atoi(value);
   } else if (MATCH("Monitor", "ip")) {
     pconfig->monip = strdup(value);
   } else if (MATCH("Monitor", "url")) {

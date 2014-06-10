@@ -71,7 +71,7 @@ WFLAGS  = -Wno-write-strings
 IFLAGS  = -I$(SRCDIR)/include
 CFLAGS  = -DNAME=\""$(NAME)"\" -DSERVICE_NAME=\"$(SERVICE_NAME)\" -DSERVICE_DISPLAY_NAME=\"$(SERVICE_DISPLAY_NAME)\" -DMONITOR=$(MONITOR) -DFDNS=$(FDNS) -DTUNNEL=$(TUNNEL) -DDHCP=$(DHCP) -DHTTP=$(HTTP) -DCFGDIR=\"$(CFGDIR)\" -DLOGDIR=\"$(LOGDIR)\" -DTMPDIR=\"$(TMPDIR)\" $(WFLAGS) $(IFLAGS)
 LDFLAGS = -static -lwsock32 -liphlpapi -lws2_32 -lpthread -lshlwapi
-OBJS    = core.o net.o ini.o
+OBJS    = core.o util.o net.o ini.o
 
 ifeq ($(MONITOR),1)
 CFLAGS += -I$(SRCDIR)/include/metakit
@@ -115,7 +115,7 @@ install: compile
 	$(INSTALL) -d $(BINDIR)
 	$(INSTALL) -d $(LOGDIR)
 	$(INSTALL) -m 0755 $(NAMES) $(BINDIR)
-	$(STRIP) $(BINDIR)/$(NAME)
+	#$(STRIP) $(BINDIR)/$(NAME)
 
 uninstall:
 	-$(RM) $(BINDIR)/$(NAME)
