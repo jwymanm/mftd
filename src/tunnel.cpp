@@ -54,9 +54,9 @@ void start() {
 }
 
 #if HTTP
-bool buildSP(void* lpParam) {
+bool buildSP(void* arg) {
 
-  http::Data* h = http::initDP("Tunnel", lpParam, 0);
+  http::Data* h = http::initDP("Tunnel", arg, 0);
 
   if (!h) return false;
 

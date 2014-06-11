@@ -49,11 +49,11 @@ void __cdecl init(void* arg) {
 
     if (getMacAddress(mon.mac, config.monip) == NO_ERROR) {
       IFAddr2String(buff, mon.mac, sizeof(mon.mac));
-      sprintf(lb.log, "Monitor: found attached device with mac: %s", buff);
+      sprintf(lb.log, "MONITOR found attached device with mac: %s", buff);
       logMesg(lb.log, LOG_INFO);
       mon.macfound = true;
     } else {
-      logMesg("Monitor: no attached device responding yet", LOG_INFO);
+      logMesg("MONITOR no attached device responding yet", LOG_INFO);
       mon.macfound = false;
     }
 
@@ -69,7 +69,7 @@ void* main(void* arg) {
 
   gd.running[MONITOR_IDX] = true;
 
-  logMesg("Monitor starting", LOG_INFO);
+  logMesg("MONITOR starting", LOG_INFO);
 
   _beginthread(init, 0, NULL);
 
@@ -81,7 +81,7 @@ void* main(void* arg) {
 
     // record date of found
     if (getAdapterData()) {
-      sprintf(lb.log, "Monitor: Adapter with description \"%s\" found", config.ifname);
+      sprintf(lb.log, "MONITOR adapter with description \"%s\" found", config.ifname);
       logMesg(lb.log, LOG_INFO);
       if (!adptr.ipset) {
         setAdptrIP(); core::stopThreads();
@@ -89,7 +89,7 @@ void* main(void* arg) {
       core::startThreads();
     // record date of not found
     } else {
-      sprintf(lb.log, "Monitor: Waiting for adapter with description \"%s\" to be available", config.ifname);
+      sprintf(lb.log, "MONITOR waiting for adapter with description \"%s\" to be available", config.ifname);
       logMesg(lb.log, LOG_INFO);
     }
 

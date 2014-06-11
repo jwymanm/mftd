@@ -2206,11 +2206,11 @@ void __cdecl init(void* arg) {
 
   for (int i = 0; i < cfig.rangeCount; i++) {
     char* logPtr = lb.log;
-    logPtr += sprintf(logPtr, "DHCP Range: ");
+    logPtr += sprintf(logPtr, "DHCP range ");
     logPtr += sprintf(logPtr, "%s", IP2String(lb.tmp, htonl(cfig.dhcpRanges[i].rangeStart)));
     logPtr += sprintf(logPtr, "-%s", IP2String(lb.tmp, htonl(cfig.dhcpRanges[i].rangeEnd)));
     logPtr += sprintf(logPtr, "/%s", IP2String(lb.tmp, cfig.dhcpRanges[i].mask));
-    logMesg(lb.log, LOG_NOTICE);
+    logMesg(lb.log, LOG_INFO);
   }
 
   if (f = openSection("REPLICATION_SERVERS", 1)) {

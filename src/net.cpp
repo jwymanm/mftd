@@ -399,10 +399,8 @@ bool dCWait(int idx) {
     // wait up to max 40 tries and then reset fc
     if (fc >= 40) fc = net.failureCounts[idx] = 0;
     eventWait = 2000 * fc;
-    sprintf(lb.log, "detectChange sleeping %d msecs and retrying failed service %s", eventWait, sname);
+    sprintf(lb.log, "%s failureCount %d, sleeping %d msecs and retrying failed service", sname, fc, eventWait);
     logMesg(lb.log, LOG_INFO);
-    sprintf(lb.log, "serviceName: %s, failureCount: %d\r\n", sname, fc);
-    logMesg(lb.log, LOG_DEBUG);
     Sleep(eventWait);
     net.ready[idx] = false;
     while (net.busy[idx]) Sleep(1000);
@@ -411,7 +409,7 @@ bool dCWait(int idx) {
     net.failureCounts[idx] = 0;
   }
 
-  sprintf(lb.log, "Service %s waiting for network changes", sname);
+  sprintf(lb.log, "%s waiting for network changes", sname);
   logMesg(lb.log, LOG_INFO);
 
   while (!net.refresh) Sleep(1000);
@@ -427,7 +425,7 @@ bool dCWait(int idx) {
   }
 
   if (!gs.exit) {
-    sprintf(lb.log, "Network event, service %s refreshing", sname);
+    sprintf(lb.log, "%s network event, service refreshing", sname);
     logMesg(lb.log, LOG_INFO);
   } else return false;
 

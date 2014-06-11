@@ -78,6 +78,10 @@ Data* initDP(const char* name, void* arg, int memSize) {
   return h;
 }
 
+bool buildSP(void* arg) {
+  return false;
+}
+
 void buildHP(Data* h) {
 
   h->res.code = resp;
@@ -101,36 +105,45 @@ void buildHP(Data* h) {
 
 #if MONITOR
   if (config.monitor) {
-    rB += sprintf(rB, "Monitor ");
-//    if (monitor::htmlStatus((void*)req, &rH))
-  //    dp[j++] = h->res.dp; sizes[i] = h->res.bytes;
+    rB += sprintf(rB, "%s ", gd.serviceNames[MONITOR_IDX]);
+//    if (monitor::buildSP((void*)h))
+//      dp[j] = h->res.dp; sizes[j] = h->res.bytes; j++;
   }
 #endif
+
 #if FDNS
   if (config.fdns) {
-    rB += sprintf(rB, "FDNS ");
-//    if (fdns::htmlStatus((void*)req, &rH))
-//      dp[j++] = req->dp; sizes[i] = req->bytes;
+    rB += sprintf(rB, "%s ", gd.serviceNames[FDNS_IDX]);
+//    if (fdns::buildSP((void*)h)) {
+//      dp[j] = h->res.dp; sizes[j] = h->res.bytes; j++;
+//    }
   }
 #endif
+
 #if TUNNEL
   if (config.tunnel) {
-    rB += sprintf(rB, "Tunnel ");
+    rB += sprintf(rB, "%s ", gd.serviceNames[TUNNEL_IDX]);
     if (tunnel::buildSP((void*)h)) {
       dp[j] = h->res.dp; sizes[j] = h->res.bytes; j++;
     }
   }
 #endif
+
 #if DHCP
   if (config.dhcp) {
-    rB += sprintf(rB, "DHCP");
+    rB += sprintf(rB, "%s ", gd.serviceNames[DHCP_IDX]);
     if (dhcp::buildSP((void*)h)) {
       dp[j] = h->res.dp; sizes[j] = h->res.bytes; j++;
     }
   }
 #endif
 
-  rB += sprintf(rB, "</h3><h2>Service config/status</h2> \n");
+  rB += sprintf(rB, "%s", gd.serviceNames[HTTP_IDX]);
+  if (buildSP((void*)h)) {
+    dp[j] = h->res.dp; sizes[j] = h->res.bytes; j++;
+  }
+
+  rB += sprintf(rB, "</h3>\n<h2>Service config/status</h2>\n");
 
   h->res.memSize = rB - respBuff;
 
@@ -225,18 +238,18 @@ void procHTTP(Data* h) {
   errno = WSAGetLastError();
 
   if (errno || h->req.bytes <= 0) {
-    sprintf(lb.log, "Client %s, HTTP Message Receive failed, WSAError %d", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr), errno);
+    sprintf(lb.log, "HTTP client %s, Message Receive failed, WSAError %u", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr), errno);
     logMesg(lb.log, LOG_INFO);
     closesocket(h->req.sock);
     free(h);
     return;
   } else {
-    sprintf(lb.log, "Client %s, HTTP Request Received", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr));
+    sprintf(lb.log, "HTTP client %s, Request Received", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr));
     logMesg(lb.log, LOG_INFO);
   }
 
   if (nd.httpClients[0] && !findServer(nd.httpClients, 8, h->req.remote.sin_addr.s_addr)) {
-    sprintf(lb.log, "Client %s, HTTP Access Denied", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr));
+    sprintf(lb.log, "HTTP client %s, Access Denied", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr));
     logMesg(lb.log, LOG_INFO);
     h->res.dp = resp.send403;//(char*)calloc(1, sizeof(hd.send403));
     h->res.memSize = sizeof(resp.send403);
@@ -260,10 +273,10 @@ void procHTTP(Data* h) {
     _beginthread(sendHTTP, 0, (void*)h);
   } else {
     if (fp) {
-      sprintf(lb.log, "Client %s, %s not found", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr), fp);
+      sprintf(lb.log, "HTTP client %s, %s not found", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr), fp);
       logMesg(lb.log, LOG_INFO);
     } else {
-      sprintf(lb.log, "Client %s, Invalid http request", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr));
+      sprintf(lb.log, "HTTP client %s, invalid request", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr));
       logMesg(lb.log, LOG_INFO);
     }
     h->res.dp = resp.send404; //(char*)calloc(1, sizeof(send404));
@@ -301,20 +314,20 @@ void __cdecl init(void* arg) {
         nd.httpConn.server = inet_addr(name);
       } else {
         nd.httpConn.loaded = false;
-        sprintf(lb.log, "Warning: Section [HTTP], Invalid IP address %s, ignored", name);
+        sprintf(lb.log, "HTTP section [HTTP], invalid IP address %s, ignored", name);
         logMesg(lb.log, LOG_NOTICE);
       }
       if (value[0]) {
         if (atoi(value)) nd.httpConn.port = atoi(value);
   	    else {
           nd.httpConn.loaded = false;
-          sprintf(lb.log, "Warning: Section [HTTP], Invalid port %s, ignored", value);
+          sprintf(lb.log, "HTTP section [HTTP], invalid port %s, ignored", value);
 	        logMesg(lb.log, LOG_NOTICE);
  	      }
       }
       if (nd.httpConn.server != inet_addr("127.0.0.1") && !findServer(net.allServers, MAX_SERVERS, nd.httpConn.server)) {
 	      nd.httpConn.loaded = false;
-	      sprintf(lb.log, "Warning: Section [HTTP], %s not available, ignored", name);
+	      sprintf(lb.log, "HTTP section [HTTP], %s not available, ignored", name);
 	      logMesg(lb.log, LOG_NOTICE);
         bindfailed = true;
       }
@@ -323,7 +336,7 @@ void __cdecl init(void* arg) {
     if (config.httpclient) {
       if (isIP(config.httpclient)) addServer(nd.httpClients, 8, inet_addr(config.httpclient));
 	    else {
-        sprintf(lb.log, "Warning: Section [HTTP], invalid client IP %s, ignored", config.httpclient);
+        sprintf(lb.log, "HTTP section [HTTP], invalid client IP %s, ignored", config.httpclient);
         logMesg(lb.log, LOG_NOTICE);
       }
     }
@@ -374,7 +387,7 @@ void __cdecl init(void* arg) {
     else net.failureCounts[HTTP_IDX] = 0;
 
     if (nd.httpConn.ready) {
-      sprintf(lb.log, "HTTP service status: http://%s:%u", IP2String(lb.tmp, nd.httpConn.server), nd.httpConn.port);
+      sprintf(lb.log, "HTTP service status url: http://%s:%u", IP2String(lb.tmp, nd.httpConn.server), nd.httpConn.port);
       logMesg(lb.log, LOG_INFO);
       FILE* f = fopen(lb.htm, "wt");
       if (f) {
