@@ -9,8 +9,6 @@
 #include "monitor.h"
 #include "http.h"
 
-bool dhcp_running = false;
-
 namespace dhcp {
 
 LocalBuffers lb;
@@ -144,6 +142,47 @@ const OPS opData[] = {
   { "NextServer", 254, 3, 1}
 };
 
+void cleanup(int et) {
+
+  int i;
+  bool closed = false;
+
+  for (i=0; i < MAX_SERVERS && nd.dhcpConn[i].loaded; i++)
+    if (nd.dhcpConn[i].ready) {
+      closesocket(nd.dhcpConn[i].sock);
+      closed = true;
+    }
+
+  if (cfig.replication && cfig.dhcpReplConn.ready) {
+    closesocket(cfig.dhcpReplConn.sock);
+    closed = true;
+  }
+
+  if (closed) logMesg("DHCP cleared network connections", LOG_DEBUG);
+
+  if (et) {
+    gd.running[DHCP_IDX] = false;
+    Sleep(1000);
+    logMesg("DHCP stopped", LOG_INFO);
+    pthread_exit(NULL);
+  }
+  return;
+}
+
+void stop() {
+  if (config.dhcp && gd.running[DHCP_IDX]) {
+    logMesg("Stopping DHCP", LOG_NOTICE);
+    gd.running[DHCP_IDX] = false;
+    cleanup(0);
+  }
+}
+
+void start() {
+  if (config.dhcp && !gd.running[DHCP_IDX]) {
+    pthread_create(&gd.threads[DHCP_TIDX], NULL, main, NULL);
+  }
+}
+
 MYWORD fUShort(void* raw) { return ntohs(*((MYWORD*)raw)); }
 MYDWORD fULong(void* raw) { return ntohl(*((MYDWORD*)raw)); }
 MYDWORD fIP(void* raw) { return(*((MYDWORD*)raw)); }
@@ -152,13 +191,13 @@ MYBYTE pULong(void* raw, MYDWORD data) { *((MYDWORD*)raw) = htonl(data); return 
 MYBYTE pIP(void* raw, MYDWORD data) { *((MYDWORD*)raw) = data; return sizeof(MYDWORD); }
 
 #if HTTP
-bool buildSP(void* lpParam) {
+bool buildSP(void* arg) {
 
   dhcpMap::iterator p;
   MYDWORD iip = 0;
   Data* dhcpEntry = NULL;
 
-  http::Data* h = http::initDP("DHCP", lpParam, (135 * dhcpCache.size()) + (cfig.dhcpSize * 26));
+  http::Data* h = http::initDP("DHCP", arg, (135 * dhcpCache.size()) + (cfig.dhcpSize * 26));
 
   if (!h) return false;
 
@@ -183,7 +222,7 @@ bool buildSP(void* lpParam) {
     fp += sprintf(fp, "<tr><th>Mac Address</th><th>IP</th><th>Lease Expiry</th><th>Hostname (first 20 chars)</th></tr>\n");
   }
 
-  for (p = dhcpCache.begin(); dhcp_running && p != dhcpCache.end() && fp < maxData; p++) {
+  for (p = dhcpCache.begin(); gd.running[DHCP_IDX] && p != dhcpCache.end() && fp < maxData; p++) {
     if ((dhcpEntry = p->second) && dhcpEntry->display && dhcpEntry->expiry >= h->req.t) {
       fp += sprintf(fp, "<tr bgcolor=\"#eee\">");
       fp += sprintf(fp, h->html.td200, dhcpEntry->mapname);
@@ -227,7 +266,7 @@ bool buildSP(void* lpParam) {
   fp += sprintf(fp, "</table>\n<h4>Free Dynamic Leases</h4>\n<table border=\"0\" cellspacing=\"9\" width=\"800\">\n");
   fp += sprintf(fp, "<tr><td><b>DHCP Range</b></td><td align=\"right\"><b>Available Leases</b></td><td align=\"right\"><b>Free Leases</b></td></tr>\n");
 
-  for (char rangeInd = 0; dhcp_running && rangeInd < cfig.rangeCount && fp < maxData; rangeInd++) {
+  for (char rangeInd = 0; gd.running[DHCP_IDX] && rangeInd < cfig.rangeCount && fp < maxData; rangeInd++) {
     float ipused = 0;
     float ipfree = 0;
     int ind = 0;
@@ -246,7 +285,7 @@ bool buildSP(void* lpParam) {
   fp += sprintf(fp, "<tr><th>Mac Address</th><th>IP</th><th>Mac Address</th><th>IP</th></tr>\n");
   MYBYTE colNum = 0;
 
-  for (p = dhcpCache.begin(); dhcp_running && p != dhcpCache.end() && fp < maxData; p++) {
+  for (p = dhcpCache.begin(); gd.running[DHCP_IDX] && p != dhcpCache.end() && fp < maxData; p++) {
     if ((dhcpEntry = p->second) && dhcpEntry->fixed && dhcpEntry->expiry < h->req.t) {
       if (!colNum) { fp += sprintf(fp, "<tr bgcolor=\"#eee\">"); colNum = 1; }
       else if (colNum == 1) { colNum = 2; }
@@ -843,7 +882,7 @@ void holdIP(MYDWORD ip) {
   }
 }
 
-void __cdecl sendToken(void* lpParam) {
+void __cdecl sendToken(void* arg) {
   Sleep(1000 * 10);
   while (true) {
     errno = 0;
@@ -1683,9 +1722,9 @@ char* genHostName(char* target, MYBYTE* hex, MYBYTE bytes) {
   return target;
 }
 
-void __cdecl updateStateFile(void* lpParam) {
+void __cdecl updateStateFile(void* arg) {
 
-  Data* dhcpEntry = (Data*)lpParam;
+  Data* dhcpEntry = (Data*) arg;
   Client dhcpData;
   memset(&dhcpData, 0, sizeof(Client));
   dhcpData.bp_hlen = 16;
@@ -1850,10 +1889,10 @@ MYWORD gdmess(Request* req, MYBYTE sockInd) {
   return 1;
 }
 
-void __cdecl logDebug(void* lpParam) {
+void __cdecl logDebug(void* arg) {
   char localBuff[1024];
   char localExtBuff[256];
-  Request* req = (Request*)lpParam;
+  Request* req = (Request*) arg;
   genHostName(localBuff, req->dhcpp.header.bp_chaddr, req->dhcpp.header.bp_hlen);
   sprintf(localExtBuff, lb.cli, localBuff);
   FILE* f = fopen(localExtBuff, "at");
@@ -1943,27 +1982,6 @@ Data* createCache(lumpData* lump) {
   if (lump->hostname && lump->hostname[0])
     cache->hostname = cloneString(lump->hostname);
   return cache;
-}
-
-void cleanup(int et) {
-  int i; bool closed = false;
-  for (i=0; i < MAX_SERVERS && nd.dhcpConn[i].loaded; i++)
-    if (nd.dhcpConn[i].ready) {
-      closesocket(nd.dhcpConn[i].sock);
-      closed = true;
-    }
-  if (cfig.replication && cfig.dhcpReplConn.ready) {
-    closesocket(cfig.dhcpReplConn.sock);
-    closed = true;
-  }
-  if (closed) logMesg("DHCP cleared network connections", LOG_DEBUG);
-  if (et) {
-    dhcp_running = false;
-    Sleep(1000);
-    logMesg("DHCP stopped", LOG_INFO);
-    pthread_exit(NULL);
-  }
-  return;
 }
 
 void loadDHCP() {
@@ -2169,7 +2187,7 @@ void loadDHCP() {
   }
 }
 
-void __cdecl init(void *lpParam) {
+void __cdecl init(void* arg) {
 
   FILE* f = NULL;
   char raw[512], name[512], value[512];
@@ -2379,7 +2397,7 @@ void __cdecl init(void *lpParam) {
 
 void* main(void* arg) {
 
-  dhcp_running = true;
+  gd.running[DHCP_IDX] = true;
 
   logMesg("DHCP starting", LOG_INFO);
 
@@ -2427,7 +2445,7 @@ void* main(void* arg) {
 
     } else ld.t = time(NULL);
 
-  } while (dhcp_running);
+  } while (gd.running[DHCP_IDX]);
 
   cleanup(1);
 }

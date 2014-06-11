@@ -11,18 +11,6 @@ Network net;
 
 using namespace core;
 
-void IFAddrToString(char* buff, BYTE* phyaddr, DWORD len) {
-  char* bptr = buff;
-  for (int i = 0; i < len; i++) {
-    if (i == (len - 1))
-      sprintf(bptr, "%.2X", phyaddr[i]);
-    else {
-      sprintf(bptr, "%.2X-", phyaddr[i]);
-      bptr+=3;
-    }
-  }
-}
-
 bool isIP(const char* str) {
   if (!str || !(*str)) return false;
   MYDWORD ip = inet_addr(str); int j = 0;
@@ -34,6 +22,18 @@ bool isIP(const char* str) {
     if (ip == INADDR_NONE || ip == INADDR_ANY) return false;
     else return true;
   } else return false;
+}
+
+void IFAddr2String(char* buff, BYTE* phyaddr, DWORD len) {
+  char* bptr = buff;
+  for (int i = 0; i < len; i++) {
+    if (i == (len - 1))
+      sprintf(bptr, "%.2X", phyaddr[i]);
+    else {
+      sprintf(bptr, "%.2X-", phyaddr[i]);
+      bptr+=3;
+    }
+  }
 }
 
 char* IP2String(char* target, MYDWORD ip) {
@@ -107,6 +107,23 @@ MYDWORD calcMask(MYDWORD rangeStart, MYDWORD rangeEnd) {
   return mask.ip;
 }
 
+MYDWORD* addServer(MYDWORD* array, MYBYTE maxServers, MYDWORD ip) {
+  for (MYBYTE i = 0; i < maxServers; i++) {
+    if (array[i] == ip) return &(array[i]);
+    else if (!array[i]) { array[i] = ip; return &(array[i]); }
+  }
+  return NULL;
+}
+
+MYDWORD* findServer(MYDWORD* array, MYBYTE cnt, MYDWORD ip) {
+  if (ip) {
+    for (MYBYTE i = 0; i < cnt && array[i]; i++) {
+      if (array[i] == ip) return &(array[i]);
+    }
+  }
+  return 0;
+}
+
 MYDWORD getClassNetwork(MYDWORD ip) {
   NET4Address data;
   data.ip = ip;
@@ -132,6 +149,7 @@ void getHostName(char *hn) {
 }
 
 bool getAdapterData()  {
+
   DWORD dwSize = 0;
   DWORD dwRetVal = 0;
   unsigned int i = 0;
@@ -141,7 +159,6 @@ bool getAdapterData()  {
   ULONG outBufLen = WORKING_BUFFER_SIZE;
   ULONG Iterations = 0;
   ULONG size = 256;
-  LPVOID lpMsgBuf = NULL;
   PIP_ADAPTER_ADDRESSES pA = NULL;
   PIP_ADAPTER_ADDRESSES pCA = NULL;
   PIP_ADAPTER_UNICAST_ADDRESS pUnicast = NULL;
@@ -149,8 +166,10 @@ bool getAdapterData()  {
   PIP_ADAPTER_MULTICAST_ADDRESS pMulticast = NULL;
   IP_ADAPTER_DNS_SERVER_ADDRESS *pDnServer = NULL;
   IP_ADAPTER_PREFIX *pPrefix = NULL;
+
   adptr.exist = false;
   adptr.ipset = false;
+
   do {
     pA = (IP_ADAPTER_ADDRESSES *) MALLOC(outBufLen);
     if (pA == NULL) return false;
@@ -159,10 +178,15 @@ bool getAdapterData()  {
     else break;
     Iterations++;
   } while ((dwRetVal == ERROR_BUFFER_OVERFLOW) && (Iterations < MAX_TRIES));
+
   if (dwRetVal == NO_ERROR) {
+
     pCA = pA;
+
     while (pCA) {
+
       if (wcscmp(adptr.desc, pCA->Description) != 0) { pCA = pCA->Next; continue; }
+
       adptr.exist = true;
       adptr.idx4 = pCA->IfIndex;
       adptr.idx6 = pCA->Ipv6IfIndex;
@@ -171,11 +195,12 @@ bool getAdapterData()  {
       wpcopy(adptr.fname, adptr.wfname);
       // look for our ip address
       pUnicast = pCA->FirstUnicastAddress;
-      if (pUnicast != NULL) {
+      if (!gs.adptrdhcp && pUnicast != NULL) {
         for (i = 0; pUnicast != NULL; i++) {
           WSAAddressToStringA(pUnicast->Address.lpSockaddr, pUnicast->Address.iSockaddrLength, NULL, ipstr, &size);
           // TODO add netmask matcher also...
-          if (strcmp(ipstr, config.adptrip) == 0) adptr.ipset = true;
+          printf("ip: %s\r\n", ipstr);
+          if (!strcmp(ipstr, config.adptrip)) adptr.ipset = true;
           pUnicast = pUnicast->Next;
         }
       }
@@ -186,61 +211,44 @@ bool getAdapterData()  {
       break;
     }
   } else {
+
     if (dwRetVal == ERROR_NO_DATA)
       logMesg("Net: No addresses were found for the requested parameters", LOG_DEBUG);
     else showError(dwRetVal);
   }
+
   if (pA) FREE(pA);
+
   return adptr.exist;
 }
 
 int setAdptrIP() {
+
   ULONG NTEContext = 0;
   ULONG NTEInstance = 0;
+
   char* sysstr = (char*) calloc(2, MAX_ADAPTER_NAME_LENGTH + 4);
-  if (config.setstatic) {
+
+  if (!gs.adptrdhcp) {
     sprintf(sysstr, "netsh interface ip set address \"%s\" static %s %s", adptr.fname, config.adptrip, config.netmask);
     system(sysstr);
-    sprintf(lb.log, "Net: Adapter IP statically set to: %s", config.adptrip);
+    //possibly fallback to just adding ip if above fails
+    //AddIPAddress(inet_addr(config.adptrip), inet_addr(config.netmask), adptr.idx4, &NTEContext, &NTEInstance);
+    //sprintf(lb.log, "Net: Added IP %s to adapter", config.adptrip);
+    sprintf(lb.log, "adapter IP statically set to: %s mask %s", config.adptrip, config.netmask);
     logMesg(lb.log, LOG_INFO);
   } else {
     sprintf (sysstr, "netsh interface ip set address \"%s\" dhcp", adptr.fname);
     system(sysstr);
-    AddIPAddress(inet_addr(config.adptrip), inet_addr(config.netmask), adptr.idx4, &NTEContext, &NTEInstance);
-    sprintf(lb.log, "Net: Added IP %s to adapter", config.adptrip);
-    logMesg(lb.log, LOG_INFO);
+    logMesg("adapter configured to use dhcp", LOG_INFO);
   }
   free (sysstr);
 }
 
-MYDWORD* addServer(MYDWORD* array, MYBYTE maxServers, MYDWORD ip) {
-  for (MYBYTE i = 0; i < maxServers; i++) {
-    if (array[i] == ip) return &(array[i]);
-    else if (!array[i]) { array[i] = ip; return &(array[i]); }
-  }
-  return NULL;
-}
-
-MYDWORD* findServer(MYDWORD* array, MYBYTE cnt, MYDWORD ip) {
-  if (ip) {
-    for (MYBYTE i = 0; i < cnt && array[i]; i++) {
-      if (array[i] == ip) return &(array[i]);
-    }
-  }
-  return 0;
-}
-
-void setServerIFs() {
+void getServerIFs() {
 
   SOCKET sd = WSASocket(PF_INET, SOCK_DGRAM, 0, 0, 0, 0);
-
   if (sd == INVALID_SOCKET) return;
-
-  if (getAdapterData())
-    if (!adptr.ipset) {
-      setAdptrIP();
-      Sleep(2000);
-    }
 
   INTERFACE_INFO InterfaceList[MAX_SERVERS];
   unsigned long nBytesReturned;
@@ -295,37 +303,53 @@ void setServerIFs() {
     }
     free(pAdapterInfo);
   }
+}
 
-  if (config.bindonly) {
-    if (getAdapterData()) {
+void setServerIFs() {
+
+  bool adapterData = false;
+
+  if (gs.adptr && getAdapterData()) {
+    if (!adptr.ipset) {
+      setAdptrIP();
+      Sleep(2000);
+    }
+    adapterData = true;
+  }
+
+  getServerIFs();
+
+  if (gs.adptr && config.bindonly) {
+    if (adapterData) {
       logMesg("bindonly set, using adapter interface ip only", LOG_INFO);
       net.listenServers[0] = inet_addr(config.adptrip);
       net.listenMasks[0] = inet_addr(config.netmask);
-    } else {
-      logMesg("bindonly set but adapter interface is not available", LOG_NOTICE);
-    }
-    return;
+      return;
+    } else
+      logMesg("bindonly set but adapter interface is not available, ignoring", LOG_NOTICE);
   }
 
   if (net.staticServers[0]) {
     logMesg("using static interface ip address(es): ", LOG_INFO);
     int i=0;
     bool nomatch = true;
-    for (; i < sizeof(net.staticServers)/sizeof(*net.staticServers), net.staticServers[i]; i++) {
+    for (; i < MAX_SERVERS && net.staticServers[i]; i++) {
       sprintf(lb.log, "  %s", IP2String(lb.tmp, net.staticServers[i]));
       logMesg(lb.log, LOG_INFO);
       net.listenServers[i] = net.staticServers[i];
       net.listenMasks[i] = net.staticServers[i];
-      if (net.staticServers[i] == inet_addr(config.adptrip)) nomatch = false;
+      if (gs.adptr && net.staticServers[i] == inet_addr(config.adptrip)) nomatch = false;
     }
-    if (config.adptrip && nomatch) {
-      logMesg("no match for adapter ip under static interfaces", LOG_NOTICE);
+    if (gs.adptr && nomatch) {
+      logMesg("no match for adapter ip under static interfaces and bindonly not set", LOG_NOTICE);
     }
   } else {
-    if (config.adptrip) {
-      logMesg("no static interfaces found, attempting to use adapter ip", LOG_NOTICE);
-      net.listenServers[0] = inet_addr(config.adptrip);
-      net.listenMasks[0] = inet_addr(config.netmask);
+    if (gs.adptr) {
+      logMesg("no static interfaces found, falling back to adapter ip", LOG_NOTICE);
+      if (!gs.adptrdhcp) {
+        net.listenServers[0] = inet_addr(config.adptrip);
+        net.listenMasks[0] = inet_addr(config.netmask);
+      }
     } else {
       logMesg("no static interfaces found and no adapter ip", LOG_NOTICE);
     }
@@ -382,7 +406,7 @@ bool dCWait(int idx) {
     Sleep(eventWait);
     net.ready[idx] = false;
     while (net.busy[idx]) Sleep(1000);
-    if (!config.bindonly || (config.bindonly && getAdapterData()))
+    if (!config.bindonly || (gs.adptr && config.bindonly && getAdapterData()))
       return true;
     net.failureCounts[idx] = 0;
   }
@@ -402,7 +426,7 @@ bool dCWait(int idx) {
     Sleep(1000);
   }
 
-  if (!config.isExiting) {
+  if (!gs.exit) {
     sprintf(lb.log, "Network event, service %s refreshing", sname);
     logMesg(lb.log, LOG_INFO);
   } else return false;
@@ -412,8 +436,14 @@ bool dCWait(int idx) {
 
 bool detectChange() {
 
-  bool adptrOk = getAdapterData();
-  bool hasStatic = net.staticServers[0];
+  // Future TODO possibly use some intel to decide to refresh
+  // services if bindonly is set
+  /*
+  if (gs.adptr && config.bindonly) {
+    bool adptrOk = getAdapterData();
+    bool hasStatic = net.staticServers[0];
+  }
+  */
 
   net.refresh = false;
 
@@ -437,11 +467,11 @@ bool detectChange() {
 
   Sleep(2000);
 
-  if (!config.isExiting) {
+  if (!gs.exit) {
     logMesg("Network event, refreshing", LOG_NOTICE);
     while (detectBusy()) {
       sprintf(lb.log, "net.busy: MONITOR: %d FDNS: %d TUNNEL: %d DHCP: %d HTTP: %d",
-        net.busy[0], net.busy[1], net.busy[2], net.busy[3], net.busy[4], net.busy[5]);
+        net.busy[MONITOR_IDX], net.busy[FDNS_IDX], net.busy[TUNNEL_IDX], net.busy[DHCP_IDX], net.busy[HTTP_IDX]);
       logMesg(lb.log, LOG_DEBUG);
       Sleep(1000);
     }
@@ -471,22 +501,36 @@ int netInit() {
   sprintf(lb.log, "hostname %s", net.hostname);
   logMesg(lb.log, LOG_NOTICE);
 
-  adptr.desc = (LPWSTR) calloc(sizeof(wchar_t), (MAX_ADAPTER_DESCRIPTION_LENGTH + 4));
-  adptr.name = (PCHAR) calloc(1, MAX_ADAPTER_NAME_LENGTH + 4);
-  adptr.fname = (PCHAR) calloc(1, MAX_ADAPTER_NAME_LENGTH + 4);
-  adptr.wfname = (PWCHAR) calloc(sizeof(wchar_t), (MAX_ADAPTER_NAME_LENGTH + 4));
+  if (config.ifname && config.adptrip) {
 
-  int ifdesclen = MultiByteToWideChar(CP_ACP, 0, config.ifname, -1, adptr.desc, 0);
-  if (ifdesclen > 0)
-    MultiByteToWideChar(CP_ACP, 0, config.ifname, -1, adptr.desc, ifdesclen);
+    adptr.desc = (LPWSTR) calloc(sizeof(wchar_t), (MAX_ADAPTER_DESCRIPTION_LENGTH + 4));
+    adptr.name = (PCHAR) calloc(1, MAX_ADAPTER_NAME_LENGTH + 4);
+    adptr.fname = (PCHAR) calloc(1, MAX_ADAPTER_NAME_LENGTH + 4);
+    adptr.wfname = (PWCHAR) calloc(sizeof(wchar_t), (MAX_ADAPTER_NAME_LENGTH + 4));
+
+    int ifdesclen = MultiByteToWideChar(CP_ACP, 0, config.ifname, -1, adptr.desc, 0);
+    if (ifdesclen > 0)
+      MultiByteToWideChar(CP_ACP, 0, config.ifname, -1, adptr.desc, ifdesclen);
+
+    gs.adptr = true;
+
+    if (!strcasecmp(config.adptrip, "dhcp"))
+      gs.adptrdhcp = true;
+    else
+      if (!config.netmask) config.netmask = "255.255.255.0";
+
+  } else {
+    // no adapter configured so we don't want to run monitor
+    if (config.monitor) {
+      logMesg("monitor disabled due to adapter configuration missing", LOG_NOTICE);
+      config.monitor = false;
+    }
+  }
 
   MYWORD wVersionReq = MAKEWORD(1,1);
   WSAStartup(wVersionReq, &net.wsa);
   if (net.wsa.wVersion != wVersionReq)
     logMesg("WSAStartup error", LOG_INFO);
-
-  if (config.adptrip)
-    if (!config.netmask) config.netmask = "255.255.255.0";
 
   setServerIFs();
 

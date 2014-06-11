@@ -377,7 +377,10 @@ typedef struct {
 } NetworkData;
 
 //Function Prototypes
-bool buildSP(void* lpParam);
+void cleanup(int et);
+void stop();
+void start();
+bool buildSP(void* arg);
 char* genHostName(char* target, MYBYTE* hex, MYBYTE bytes);
 FILE* openSection(const char* sectionName, MYBYTE index);
 char* readSection(char* raw, FILE* f);
@@ -411,18 +414,17 @@ void addVendClass(MYBYTE rangeSetInd, char* vendClass, MYBYTE vendClassSize);
 void calcRangeLimits(MYDWORD ip, MYDWORD mask, MYDWORD* rangeStart, MYDWORD* rangeEnd);
 void checkSize();
 void loadDHCP();
-void logDebug(void* lpParam);
+void logDebug(void* arg);
 void lockIP(MYDWORD ip);
 void pvdata(Request* req, OptCode* op);
-void releaseLease(void* lpParam);
+void releaseLease(void* arg);
 void recvRepl(Request* req);
 void setTempLease(Data*);
 void setLeaseExpiry(Data*);
 void setLeaseExpiry(Data*, MYDWORD);
-void sendToken(void* lpParam);
+void sendToken(void* arg);
 void updateStateFile(void*);
-void cleanup(int et);
-void __cdecl init(void *lpParam);
+void __cdecl init(void* arg);
 void* main(void* arg);
 
 }

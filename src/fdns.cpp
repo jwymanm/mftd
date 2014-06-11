@@ -9,13 +9,49 @@
 #include "monitor.h"
 #include "http.h"
 
-bool fdns_running = false;
-
 namespace fdns {
 
 LocalBuffers lb;
 LocalData ld;
 NetworkData nd;
+
+void cleanup(int et) {
+
+  int i;
+  bool closed = false;
+
+  for (i=0; i < MAX_SERVERS && nd.fdnsConn[i].loaded; i++)
+    if (nd.fdnsConn[i].ready) {
+      closesocket(nd.fdnsConn[i].sock);
+      closed = true;
+    }
+
+  if (closed) logMesg("FDNS cleared network connections", LOG_DEBUG);
+
+  if (et) {
+    gd.running[FDNS_IDX] = false;
+    Sleep(1000);
+    logMesg("FDNS stopped", LOG_INFO);
+    pthread_exit(NULL);
+  }
+  return;
+}
+
+void stop() {
+  if (config.fdns && gd.running[FDNS_IDX]) {
+    logMesg("Stopping FDNS", LOG_NOTICE);
+    gd.running[FDNS_IDX] = false;
+    cleanup(0);
+  }
+}
+
+void start() {
+  if (config.fdns && !gd.running[FDNS_IDX]) {
+    pthread_create(&gd.threads[FDNS_TIDX], NULL, main, NULL);
+  }
+}
+
+//todo: http
 
 void sendResponse(MYBYTE sndx) {
 
@@ -48,23 +84,6 @@ void sendResponse(MYBYTE sndx) {
 
   sendto(nd.fdnsConn[sndx].sock, m, n, r->flags, (sockaddr*) &r->remote, r->sockLen);
 
-  return;
-}
-
-void cleanup(int et) {
-  int i; bool closed = false;
-  for (i=0; i < MAX_SERVERS && nd.fdnsConn[i].loaded; i++)
-    if (nd.fdnsConn[i].ready) {
-      closesocket(nd.fdnsConn[i].sock);
-      closed = true;
-    }
-  if (closed) logMesg("FDNS cleared network connections", LOG_DEBUG);
-  if (et) {
-    fdns_running = false;
-    Sleep(1000);
-    logMesg("FDNS stopped", LOG_INFO);
-    pthread_exit(NULL);
-  }
   return;
 }
 
@@ -149,9 +168,9 @@ void __cdecl init(void* arg) {
   return;
 }
 
-void* main(void *arg) {
+void* main(void* arg) {
 
-  fdns_running = true;
+  gd.running[FDNS_IDX] = true;
 
   logMesg("FDNS starting", LOG_INFO);
 
@@ -189,7 +208,7 @@ void* main(void *arg) {
 
     } else ld.t = time(NULL);
 
-  } while (fdns_running);
+  } while (gd.running[FDNS_IDX]);
 
   free(ld.ip4str);
 

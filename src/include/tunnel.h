@@ -2,8 +2,6 @@
 
 #define BUFFER_SIZE 4096
 
-extern "C" bool tunnel_running;
-
 namespace tunnel {
 
 typedef struct {
@@ -27,14 +25,16 @@ typedef struct {
   SOCKET maxFD;
 } NetworkData;
 
-bool buildSP(void* lpParam);
+void cleanup(int et);
+void stop();
+void start();
+bool buildSP(void* arg);
 int fd();
 void remoteData();
 void clientData();
 int useTunnel();
 int buildTunnel();
 int handleClient(MYBYTE sndx);
-void cleanup(int et);
 void __cdecl init(void* arg);
 void* main(void* arg);
 

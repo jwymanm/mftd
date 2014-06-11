@@ -5,8 +5,6 @@
 #define WORKING_BUFFER_SIZE 15000
 #define MAX_TRIES 3
 
-extern "C" bool monitor_running;
-
 namespace monitor {
 
 typedef struct {
@@ -30,11 +28,10 @@ extern "C" Monitor mon;
 DWORD getMacAddress(unsigned char* mac, const char* ip);
 
 // main.cpp
-
-void start();
+void cleanup(int et);
 void stop();
+void start();
 void __cdecl init(void* arg);
-int cleanup (int et);
 void* main(void* arg);
 
 }

@@ -27,8 +27,6 @@ int ini_handler(void* cfg, const char* section, const char* name, const char* va
     pconfig->adptrip = strdup(value);
   } else if (MATCH("Adapter", "mask")) {
     pconfig->netmask = strdup(value);
-  } else if (MATCH("Adapter", "static")) {
-    pconfig->setstatic = atoi(value);
   } else if (MATCH("Adapter", "bindonly")) {
     pconfig->bindonly = atoi(value);
   } else if (MATCH("Monitor", "ip")) {

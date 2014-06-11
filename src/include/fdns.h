@@ -34,8 +34,10 @@ typedef struct {
   SOCKET maxFD;
 } NetworkData;
 
-void sendResponse(MYBYTE sndx);
 void cleanup(int et);
+void stop();
+void start();
+void sendResponse(MYBYTE sndx);
 void __cdecl init(void* arg);
 void* main(void* arg);
 

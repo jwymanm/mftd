@@ -48,18 +48,20 @@ typedef struct {
 extern "C" Adapter adptr;
 extern "C" Network net;
 
-void IFAddrToString(char* buff, BYTE* phyaddr, DWORD len);
-bool isIP(const char *str);
-char *IP2String(char *target, MYDWORD ip);
-char *IP62String(char *target, MYBYTE *source);
+bool isIP(const char* str);
+void IFAddr2String(char* buff, BYTE* phyaddr, DWORD len);
+bool isIP(const char* str);
+char* IP2String(char* target, MYDWORD ip);
+char* IP62String(char* target, MYBYTE* source);
 bool checkMask(MYDWORD mask);
 MYDWORD calcMask(MYDWORD rangeStart, MYDWORD rangeEnd);
+MYDWORD* findServer(MYDWORD* array, MYBYTE cnt, MYDWORD ip);
+MYDWORD* addServer(MYDWORD* array, MYBYTE maxServers, MYDWORD ip);
 MYDWORD getClassNetwork(MYDWORD ip);
 void getHostName(char *hn);
 bool getAdapterData();
 int setAdptrIP();
-MYDWORD *findServer(MYDWORD* array, MYBYTE cnt, MYDWORD ip);
-MYDWORD *addServer(MYDWORD* array, MYBYTE maxServers, MYDWORD ip);
+void getServerIFs();
 void setServerIFs();
 void stopDC();
 bool dCWait(int idx);

@@ -11,8 +11,6 @@
 #include "monitor.h"
 #include "http.h"
 
-bool http_running = false;
-
 namespace http {
 
 LocalBuffers lb;
@@ -33,9 +31,40 @@ HTML html = {
   "\n</html>"
 };
 
-Data* initDP(const char* name, void* lpParam, int memSize) {
+void cleanup(int et) {
 
-  Data* h = (Data*) lpParam;
+  if (nd.httpConn.ready) {
+    closesocket(nd.httpConn.sock);
+    logMesg("HTTP cleared network connections", LOG_DEBUG);
+  }
+
+  if (et) {
+    gd.running[HTTP_IDX] = false;
+    Sleep(1000);
+    logMesg("HTTP stopped", LOG_INFO);
+    pthread_exit(NULL);
+  }
+
+  return;
+}
+
+void stop() {
+  if (config.http && gd.running[HTTP_IDX]) {
+    logMesg("Stopping HTTP", LOG_NOTICE);
+    gd.running[HTTP_IDX] = false;
+    cleanup(0);
+  }
+}
+
+void start() {
+  if (config.http && !gd.running[HTTP_IDX]) {
+    pthread_create(&gd.threads[HTTP_TIDX], NULL, main, NULL);
+  }
+}
+
+Data* initDP(const char* name, void* arg, int memSize) {
+
+  Data* h = (Data*) arg;
 
   h->res.memSize = HTTP_SECSIZE + memSize;
   h->res.dp = (char*) calloc(1, h->res.memSize);
@@ -141,13 +170,13 @@ void buildHP(Data* h) {
   return;
 }
 
-void __cdecl sendHTTP(void* lpParam) {
-  Data* h = (Data*)lpParam;
+void __cdecl sendHTTP(void* arg) {
+  Data* h = (Data*) arg;
   char* dp = h->res.dp;
   timeval tv;
   fd_set writefds;
   int sent = 0;
-  while (http_running && h->res.bytes > 0) {
+  while (gd.running[HTTP_IDX] && h->res.bytes > 0) {
     tv.tv_sec = 5;
     tv.tv_usec = 0;
     FD_ZERO(&writefds);
@@ -245,21 +274,7 @@ void procHTTP(Data* h) {
   return;
 }
 
-void cleanup(int et) {
-  if (nd.httpConn.ready) {
-    closesocket(nd.httpConn.sock);
-    logMesg("HTTP cleared network connections", LOG_DEBUG);
-  }
-  if (et) {
-    http_running = false;
-    Sleep(1000);
-    logMesg("HTTP stopped", LOG_INFO);
-    pthread_exit(NULL);
-  }
-  return;
-}
-
-void __cdecl init(void *lpParam) {
+void __cdecl init(void* arg) {
 
   FILE* f;
   char name[MAXCFGSIZE+2], value[MAXCFGSIZE+2];
@@ -382,7 +397,7 @@ void __cdecl init(void *lpParam) {
 
 void* main(void* arg) {
 
-  http_running = true;
+  gd.running[HTTP_IDX] = true;
 
   logMesg("HTTP starting", LOG_INFO);
 
@@ -423,7 +438,7 @@ void* main(void* arg) {
       }
     }
 
-  } while (http_running);
+  } while (gd.running[HTTP_IDX]);
 
   cleanup(1);
 

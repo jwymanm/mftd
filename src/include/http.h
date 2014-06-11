@@ -4,8 +4,6 @@
 #define HTTP_ISLINGER 1
 #define HTTP_LOFFT    12
 
-extern "C" bool http_running;
-
 namespace http {
 
 typedef struct {
@@ -60,12 +58,14 @@ typedef struct {
   bool busy;
 } NetworkData;
 
-Data* initDP(const char* name, void* lpParam, int memSize);
+void cleanup(int et);
+void stop();
+void start();
+Data* initDP(const char* name, void* arg, int memSize);
 void buildHP(Data* h);
 void procHTTP(Data* h);
-void sendHTTP(void* lpParam);
-void cleanup(int et);
-void __cdecl init(void *lpParam);
+void sendHTTP(void* arg);
+void __cdecl init(void *arg);
 void* main(void* arg);
 
 }

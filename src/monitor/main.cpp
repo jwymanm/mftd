@@ -9,33 +9,37 @@
 #include "net.h"
 #include "monitor.h"
 
-bool monitor_running = false;
-
 namespace monitor {
 
 Monitor mon;
 LocalBuffers lb;
 LocalData ld;
 
-void start() {
-  pthread_create(&gd.threads[MONITOR_TIDX], NULL, main, NULL);
-}
+void cleanup (int et) {
 
-void stop() {
-  monitor_running = false;
-  monitor::cleanup(0);
-}
-
-int cleanup (int et) {
   if (et) {
-    monitor_running = false;
+    gd.running[MONITOR_IDX] = false;
     logMesg("Monitor stopped", LOG_INFO);
     pthread_exit(NULL);
   } else {
     logMesg("Monitor cleaned up", LOG_INFO);
-    return 0;
+    return;
   }
 }
+
+void stop() {
+  if (config.monitor && gd.running[MONITOR_IDX]) {
+    gd.running[MONITOR_IDX] = false;
+    cleanup(0);
+  }
+}
+
+void start() {
+  if (config.monitor && !gd.running[MONITOR_IDX])
+    pthread_create(&gd.threads[MONITOR_TIDX], NULL, main, NULL);
+}
+
+//todo: http
 
 void __cdecl init(void* arg) {
 
@@ -44,7 +48,7 @@ void __cdecl init(void* arg) {
   do {
 
     if (getMacAddress(mon.mac, config.monip) == NO_ERROR) {
-      IFAddrToString(buff, mon.mac, sizeof(mon.mac));
+      IFAddr2String(buff, mon.mac, sizeof(mon.mac));
       sprintf(lb.log, "Monitor: found attached device with mac: %s", buff);
       logMesg(lb.log, LOG_INFO);
       mon.macfound = true;
@@ -55,15 +59,15 @@ void __cdecl init(void* arg) {
 
     Sleep(60000);
 
-  } while (monitor_running);
+  } while (gd.running[MONITOR_IDX]);
 
   _endthread();
   return;
 }
 
-void *main(void *args) {
+void* main(void* arg) {
 
-  monitor_running = true;
+  gd.running[MONITOR_IDX] = true;
 
   logMesg("Monitor starting", LOG_INFO);
 
@@ -89,7 +93,7 @@ void *main(void *args) {
       logMesg(lb.log, LOG_INFO);
     }
 
-  } while (monitor_running);
+  } while (gd.running[MONITOR_IDX]);
 
   cleanup(1);
 }

@@ -19,7 +19,7 @@ GData gd = {
 GEvents ge;
 GPaths path = { gd.bpath, gd.cpath, gd.dpath, gd.epath, gd.ipath, gd.lpath, gd.lfname, gd.tpath };
 GConfiguration config;
-bool running = true;
+GSetting gs;
 
 // Locals to core
 namespace core {  LocalBuffers lb; LocalData ld; }
@@ -68,7 +68,7 @@ void showError(DWORD enumber) {
 
 void startupMesg() {
   if (config.logging) {
-    if (config.isService)
+    if (gs.service)
       logMesg(SERVICE_NAME " service starting", LOG_NOTICE);
     else
       logMesg(NAME " starting", LOG_NOTICE);
@@ -115,8 +115,7 @@ void __cdecl logThread(void* arg) {
 
   FILE* f = fopen(lfn, "at");
 
-
-  if (config.verbose) {
+  if (gs.verbose) {
     strftime(buff, sizeof(buff), " %X ", ttm);
     debug(log->level, buff, (void* ) log->mesg);
   }
@@ -138,56 +137,43 @@ void __cdecl logThread(void* arg) {
 namespace core {
 
 void startThreads() {
+#if MONITOR
+  monitor::start();
+  Sleep(1000);
+#endif
 #if FDNS
-  if (config.fdns && !fdns_running) {
-    pthread_create(&gd.threads[FDNS_TIDX], NULL, fdns::main, NULL);
-  }
+  fdns::start();
+  Sleep(1000);
 #endif
 #if TUNNEL
-  if (config.tunnel && !tunnel_running) {
-    pthread_create(&gd.threads[TUNNEL_TIDX], NULL, tunnel::main, NULL);
-  }
+  tunnel::start();
+  Sleep(1000);
 #endif
 #if DHCP
-  if (config.dhcp && !dhcp_running) {
-    pthread_create(&gd.threads[DHCP_TIDX], NULL, dhcp::main, NULL);
-  }
+  dhcp::start();
+  Sleep(1000);
 #endif
 #if HTTP
-  if (config.http && !http_running) {
-    pthread_create(&gd.threads[HTTP_TIDX], NULL, http::main, NULL);
-  }
+  http::start();
+  Sleep(1000);
 #endif
 }
 
 void stopThreads() {
+#if MONITOR
+  monitor::stop();
+#endif
 #if FDNS
-  if (config.fdns && fdns_running) {
-    logMesg("Stopping FDNS", LOG_INFO);
-    fdns_running = false;
-    fdns::cleanup(0);
-  }
+  fdns::stop();
 #endif
 #if TUNNEL
-  if (config.tunnel && tunnel_running) {
-    logMesg("Stopping Tunnel", LOG_INFO);
-    tunnel_running = false;
-    tunnel::cleanup(0);
-  }
+  tunnel::stop();
 #endif
 #if DHCP
-  if (config.dhcp && dhcp_running) {
-    logMesg("Stopping DHCP", LOG_INFO);
-    dhcp_running = false;
-    dhcp::cleanup(0);
-  }
+  dhcp::stop();
 #endif
 #if HTTP
-  if (config.http && http_running) {
-    logMesg("Stopping HTTP", LOG_INFO);
-    http_running = false;
-    http::cleanup(0);
-  }
+  http::stop();
 #endif
 }
 
@@ -195,13 +181,9 @@ void __cdecl threadLoop(void* arg) {
 
   startThreads();
 
-#if MONITOR
-  if (config.monitor) monitor::start();
-#endif
-
   while (detectChange()) Sleep(1000);
 
-  if (config.isService) _endthread();
+  if (gs.service) _endthread();
   return;
 }
 
@@ -248,21 +230,13 @@ void WINAPI ServiceMain(DWORD, TCHAR* []) {
     ld.serviceStatus.dwControlsAccepted |= (SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN);
     ld.serviceStatus.dwCurrentState = SERVICE_RUNNING;
     SetServiceStatus(ld.serviceStatusHandle, &ld.serviceStatus);
-    config.isService = true;
+    gs.service = true;
     startupMesg();
     netInit();
-#if MONITOR
-    if (config.monitor) monitor::start();
-    else
-#endif
     _beginthread(threadLoop, 0, NULL);
     while (WaitForSingleObject(ld.stopServiceEvent, 0) == WAIT_TIMEOUT) Sleep(1000);
     logMesg(SERVICE_NAME " stopping", LOG_NOTICE);
-    config.isExiting = true;
-    running = false;
-#if MONITOR
-    if (config.monitor) monitor::stop();
-#endif
+    gs.exit = true;
     stopDC();
     Sleep(1000);
     stopThreads();
@@ -405,11 +379,11 @@ int main(int argc, char* argv[]) {
 	      CloseServiceHandle(serviceControlManager);
       }
       if (serviceStopped) {
-        config.verbose = true; startupMesg(); netInit(); threadLoop(NULL);
+        gs.verbose = true; startupMesg(); netInit(); threadLoop(NULL);
       } else printf("Failed to stop service\n");
     } else { runService(); }
     } else if (argc == 1 || lstrcmpi(argv[1], TEXT("-v")) == 0) {
-        config.verbose = true; startupMesg(); netInit(); threadLoop(NULL);
+        gs.verbose = true; startupMesg(); netInit(); threadLoop(NULL);
   } else printf(NAME " requires Windows XP or newer, exiting\n");
   CloseHandle(ge.file);
   CloseHandle(ge.log);

@@ -12,13 +12,46 @@
 #include "monitor.h"
 #include "http.h"
 
-bool tunnel_running = false;
-
 namespace tunnel {
 
 LocalBuffers lb;
 LocalData ld;
 NetworkData nd;
+
+void cleanup(int et) {
+
+  int i;
+  bool closed = false;
+
+  for (i=0; i < MAX_SERVERS && nd.tunConn[i].loaded; i++)
+    if (nd.tunConn[i].ready) {
+      closesocket(nd.tunConn[i].sock);
+      closed = true;
+    }
+
+  if (closed) logMesg("TUNNEL closed network connections", LOG_INFO);
+
+  if (et) {
+    gd.running[TUNNEL_IDX] = false;
+    Sleep(1000);
+    logMesg("Tunnel stopped", LOG_INFO);
+    pthread_exit(NULL);
+  } else return;
+}
+
+void stop() {
+  if (config.tunnel && gd.running[TUNNEL_IDX]) {
+    logMesg("Stopping TUNNEL", LOG_NOTICE);
+    gd.running[TUNNEL_IDX] = false;
+    cleanup(0);
+  }
+}
+
+void start() {
+  if (config.tunnel && !gd.running[TUNNEL_IDX]) {
+    pthread_create(&gd.threads[TUNNEL_TIDX], NULL, main, NULL);
+  }
+}
 
 #if HTTP
 bool buildSP(void* lpParam) {
@@ -91,7 +124,7 @@ void remoteData() {
 
   send(nd.cliConn.sock, lb.data, cnt, 0);
 
-  if (config.verbose && config.logging == LOG_DEBUG) {
+  if (gs.verbose && config.logging == LOG_DEBUG) {
     printf("TUNNEL transmitting data from remote:\r\n");
     fwrite(lb.data, sizeof(char), cnt, stdout);
     fflush(stdout);
@@ -122,7 +155,7 @@ void clientData() {
 
   send(nd.remConn.sock, lb.data, cnt, 0);
 
-  if (config.verbose && config.logging == LOG_DEBUG) {
+  if (gs.verbose && config.logging == LOG_DEBUG) {
     printf("TUNNEL transmitting data from client:\r\n");
     fwrite(lb.data, sizeof(char), cnt, stdout);
     fflush(stdout);
@@ -217,21 +250,6 @@ int handleClient(MYBYTE sndx) {
   return 1;
 }
 
-void cleanup(int et) {
-  int i; bool closed = false;
-  for (i=0; i < MAX_SERVERS && nd.tunConn[i].loaded; i++)
-    if (nd.tunConn[i].ready) {
-      closesocket(nd.tunConn[i].sock);
-      closed = true;
-    }
-  if (closed) logMesg("TUNNEL closed network connections", LOG_INFO);
-  if (et) {
-    tunnel_running = false;
-    Sleep(1000);
-    logMesg("Tunnel stopped", LOG_INFO);
-    pthread_exit(NULL);
-  } else return;
-}
 
 void __cdecl init(void* arg) {
 
@@ -325,7 +343,7 @@ void __cdecl init(void* arg) {
 
 void* main(void* arg) {
 
-  tunnel_running = true;
+  gd.running[TUNNEL_IDX] = true;
 
   logMesg("TUNNEL starting", LOG_INFO);
 
@@ -367,7 +385,7 @@ void* main(void* arg) {
 
     } else ld.t = time(NULL);
 
-  } while (tunnel_running);
+  } while (gd.running[TUNNEL_IDX]);
 
   cleanup(1);
 }

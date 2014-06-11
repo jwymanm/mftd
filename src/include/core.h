@@ -105,7 +105,6 @@ typedef struct {
   const char* ifname;
   const char* adptrip;
   const char* netmask;
-  bool setstatic;
   bool bindonly;
   const char* monip;
   const char* monurl;
@@ -117,16 +116,21 @@ typedef struct {
   const char* httpaddr;
   const char* httpclient;
   const char* htmltitle;
-  bool verbose;
-  bool isService;
-  bool isExiting;
 } GConfiguration;
+
+typedef struct {
+  bool verbose;
+  bool service;
+  bool exit;
+  bool adptr;
+  bool adptrdhcp;
+} GSetting;
 
 extern "C" GData gd;
 extern "C" GEvents ge;
 extern "C" GPaths path;
 extern "C" GConfiguration config;
-extern "C" bool running;
+extern "C" GSetting gs;
 
 void debug(int level, const char* xstr, void* mesg);
 void showError(DWORD enumber);
