@@ -4,9 +4,9 @@ mftd
 Monitor adapter, Fake DNS, Tunnel, and DHCP combined into one Windows Service
 
 
-This program was written to provide a quick tunnel that sends all traffic to a certain port to another host. It includes a fake dns provider so that if hostnames are used then all requests to that hostname:port will be received by this program and tunneled properly. DHCP works if enabled in the source.
+This program was written to provide a quick tunnel that sends all traffic to a certain port to another host. It includes a fake dns service so that if hostnames are used then all requests to that hostname will be received by this program and tunneled properly. Also included is a feature complete DHCP server forked from the OpenDHCP code base. Any service can be disabled or enabled in the configuration or even removed completely by editing the Makefile and rebuilding.
 
-It is useful so you do not have to use Windows ICS and deal with its unreliable nature along side VPN traffic.
+The entire program is less than 1 megabyte in size and includes built in service installation and unloading as well as a run directly mode (using -v). Logging is configurable and can be entirely shut off. Memory footprint is roughly 2 megabytes.
 
 
 Release
@@ -14,7 +14,7 @@ Release
 
   *New*
 
-   v0.2 release is now available. The binary is located at https://github.com/jwymanm/mftd/releases/download/v0.2/mftd.exe Put this in a folder called bin under the source tree and create tmp and log directories along side it. The ini should stay in etc/
+   v0.3 release is now available. The binary is located at https://github.com/jwymanm/mftd/releases/download/v0.3/mftd.exe Put this in a folder called bin under the source tree and create tmp and log directories along side it. The ini should stay in etc/
 
 
 Use

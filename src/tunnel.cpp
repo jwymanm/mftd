@@ -29,47 +29,44 @@ void cleanup(int et) {
       closed = true;
     }
 
-  if (closed) logMesg("TUNNEL closed network connections", LOG_INFO);
+  if (closed) {
+    LSM(LOG_INFO, "closed network connections")
+  }
 
   if (et) {
-    gd.running[TUNNEL_IDX] = false;
+    *ld.ir = false;
     Sleep(1000);
-    logMesg("Tunnel stopped", LOG_INFO);
+    LSM(LOG_NOTICE, "stopped")
     pthread_exit(NULL);
   } else return;
 }
 
 void stop() {
   if (config.tunnel && gd.running[TUNNEL_IDX]) {
-    logMesg("Stopping TUNNEL", LOG_NOTICE);
-    gd.running[TUNNEL_IDX] = false;
+    *ld.ir = false;
+    LSM(LOG_NOTICE, "stopping")
     cleanup(0);
+    Sleep(1000);
   }
 }
 
 void start() {
   if (config.tunnel && !gd.running[TUNNEL_IDX]) {
     pthread_create(&gd.threads[TUNNEL_TIDX], NULL, main, NULL);
+    Sleep(1000);
   }
 }
 
 #if HTTP
 bool buildSP(void* arg) {
 
-  http::Data* h = http::initDP("Tunnel", arg, 0);
-
-  if (!h) return false;
+  HTTP_SPHEAD(0)
 
   int i=0, j=0;
-  char* fp = h->res.dp;
-  char* maxData = h->res.dp + h->res.memSize;
-
-  fp += sprintf(fp, "<h3>Tunnel</h3>\n");
 
   if (!nd.tunConn[0].ready) {
     fp += sprintf(fp, "<p>Waiting for interface</p>\n");
-    h->res.bytes = fp - h->res.dp;
-    return true;
+    HTTP_SPFOOT
   }
 
   fp += sprintf(fp, "<table border=\"0\" cellspacing=\"9\" width=\"800\"><tr><th>Local Host/Port</th><th>Remote Host/Port</th></tr>");
@@ -80,18 +77,17 @@ bool buildSP(void* arg) {
         fp += sprintf(fp, "<tr><td>%s / %d</td>", IP2String(lb.tmp, nd.tunConn[j].server), config.lport);
         fp += sprintf(fp, "<td>%s / %d</td></tr>", config.host, config.rport);
       }
-  fp += sprintf(fp, "</table>\n<br/>\n<p>\n");
+  fp += sprintf(fp, "</table>\n<br/>\n<p>");
 
   // TODO split active off per server connection..
   if (ld.active)
-    fp += sprintf(fp, "Active with client %s\n", inet_ntoa(nd.cliConn.addr.sin_addr));
+    fp += sprintf(fp, "Active with client %s", inet_ntoa(nd.cliConn.addr.sin_addr));
   else
-    fp += sprintf(fp, "Waiting for client\n");
+    fp += sprintf(fp, "Waiting for client");
 
-  fp += sprintf(fp, "</p>\n");
+  fp += sprintf(fp, "</p>\n<br/>\n");
 
-  h->res.bytes = fp - h->res.dp;
-  return true;
+  HTTP_SPFOOT
 }
 #endif
 
@@ -99,7 +95,7 @@ int fd() {
 	unsigned int cfd = nd.cliConn.sock;
 	if (cfd < nd.remConn.sock) cfd = nd.remConn.sock;
 	return cfd + 1;
-  printf("fds = c %d r %d\r\n", cfd, nd.remConn.sock);
+  //printf("fds = c %d r %d\r\n", cfd, nd.remConn.sock);
 }
 
 void remoteData() {
@@ -107,7 +103,7 @@ void remoteData() {
   int cnt = recv(nd.remConn.sock, lb.data, sizeof(lb.data), 0);
 
   if (cnt == SOCKET_ERROR) {
-    logMesg("TUNNEL remoteData socket error", LOG_DEBUG);
+    LSM(LOG_DEBUG, "remoteData socket error %u", WSAGetLastError());
     closesocket(nd.cliConn.sock);
     closesocket(nd.remConn.sock);
   }
@@ -125,7 +121,7 @@ void remoteData() {
   send(nd.cliConn.sock, lb.data, cnt, 0);
 
   if (gs.verbose && config.logging == LOG_DEBUG) {
-    printf("TUNNEL transmitting data from remote:\r\n");
+    printf("%s transmitting data from remote:\r\n", ld.sn);
     fwrite(lb.data, sizeof(char), cnt, stdout);
     fflush(stdout);
   }
@@ -138,7 +134,7 @@ void clientData() {
 
 
   if (cnt == SOCKET_ERROR) {
-    logMesg("TUNNEL clientData socket error", LOG_DEBUG);
+    LSM(LOG_DEBUG, "clientData socket error %u", WSAGetLastError());
     closesocket(nd.cliConn.sock);
     closesocket(nd.remConn.sock);
   }
@@ -156,7 +152,7 @@ void clientData() {
   send(nd.remConn.sock, lb.data, cnt, 0);
 
   if (gs.verbose && config.logging == LOG_DEBUG) {
-    printf("TUNNEL transmitting data from client:\r\n");
+    printf("%s transmitting data from client:\r\n", ld.sn);
     fwrite(lb.data, sizeof(char), cnt, stdout);
     fflush(stdout);
   }
@@ -180,10 +176,10 @@ int useTunnel() {
 
     if (select(fd(), &io, NULL, NULL, NULL) == SOCKET_ERROR) {
       if (WSAGetLastError() == WSAENOTSOCK)
-        sprintf(lb.log,"TUNNEL client/remote closed connection");
+        sprintf(lb.log, "client/remote closed connection");
       else
-        sprintf(lb.log,"TUNNEL useTunnel select error: %u", WSAGetLastError());
-      logMesg(lb.log, LOG_NOTICE);
+        sprintf(lb.log, "useTunnel select error: %u", WSAGetLastError());
+      LSM(LOG_NOTICE, "%s", lb.log)
       break;
     }
 
@@ -202,8 +198,8 @@ int buildTunnel() {
   nd.remote_host = gethostbyname(config.host);
 
   if (nd.remote_host == NULL) {
-    sprintf(lb.log, "TUNNEL could not resolve host %s", config.host);
-    logMesg(lb.log, LOG_NOTICE);
+    LSM(LOG_NOTICE, "could not resolve host %s", config.host)
+    ld.active = false;
     return 0;
   }
 
@@ -213,15 +209,13 @@ int buildTunnel() {
   nd.remConn.sock = socket(AF_INET, SOCK_STREAM, 0);
 
   if (nd.remConn.sock == INVALID_SOCKET) {
-    sprintf(lb.log, "TUNNEL buildTunnel socket error %u", WSAGetLastError());
-    logMesg(lb.log, LOG_NOTICE);
+    showSockError(ld.sn, GetLastError());
     ld.active = false;
     return 0;
   }
 
   if (connect(nd.remConn.sock, (sockaddr*) &nd.remConn.addr, sizeof(nd.remConn.addr)) == SOCKET_ERROR) {
-    sprintf(lb.log, "TUNNEL buildTunnel connect error %u", WSAGetLastError());
-    logMesg(lb.log, LOG_NOTICE);
+    LSM(LOG_NOTICE, "buildTunnel connect error %u", WSAGetLastError())
     ld.active = false;
     return 0;
   }
@@ -239,14 +233,11 @@ int handleClient(MYBYTE sndx) {
     accept(nd.tunConn[sndx].sock, (sockaddr*) &nd.cliConn.addr, &sockLen);
 
   if (nd.cliConn.sock == INVALID_SOCKET) {
-    sprintf(lb.log, "TUNNEL accept error %u", WSAGetLastError());
-    logMesg(lb.log, LOG_NOTICE);
+    showSockError(ld.sn, GetLastError());
     return 0;
   }
 
-  sprintf(lb.log, "TUNNEL request from %s", inet_ntoa(nd.cliConn.addr.sin_addr));
-  logMesg(lb.log, LOG_INFO);
-
+  LSM(LOG_INFO, "request from %s", inet_ntoa(nd.cliConn.addr.sin_addr))
   return 1;
 }
 
@@ -274,8 +265,8 @@ void __cdecl init(void* arg) {
       nd.tunConn[i].sock = socket(AF_INET, SOCK_STREAM, 0);
 
       if (nd.tunConn[i].sock == INVALID_SOCKET) {
-        sprintf(lb.log, "TUNNEL socket error %u", WSAGetLastError());
-        logMesg(lb.log, LOG_NOTICE);
+        //todo show server interface responsible
+        showSockError(ld.sn, GetLastError());
         bindfailed = true;
         continue;
       }
@@ -289,16 +280,14 @@ void __cdecl init(void* arg) {
       nRet = bind(nd.tunConn[i].sock, (sockaddr*) &nd.tunConn[i].addr, sizeof(nd.tunConn[i].addr));
 
       if (nRet == SOCKET_ERROR) {
-        sprintf(lb.log, "TUNNEL cannot bind local port, error %u", WSAGetLastError());
-        logMesg(lb.log, LOG_NOTICE);
+        showSockError(ld.sn, GetLastError());
         bindfailed = true;
         closesocket(nd.tunConn[i].sock);
         continue;
       }
 
       if (listen(nd.tunConn[i].sock, 1) == SOCKET_ERROR) {
-        sprintf(lb.log, "TUNNEL listen error %u", WSAGetLastError());
-        logMesg(lb.log, LOG_NOTICE);
+        showSockError(ld.sn, GetLastError());
         bindfailed = true;
         closesocket(nd.tunConn[i].sock);
         continue;
@@ -317,19 +306,18 @@ void __cdecl init(void* arg) {
 
     nd.maxFD++;
 
-    if (bindfailed) net.failureCounts[TUNNEL_IDX]++;
-    else net.failureCounts[TUNNEL_IDX] = 0;
+    if (bindfailed)  (*ld.fc)++;
+    else *ld.fc = 0;
 
     if (!nd.tunConn[0].ready) {
-      logMesg("TUNNEL no interface ready, waiting...", LOG_NOTICE);
+      LSM(LOG_NOTICE, "no interface ready, waiting")
       continue;
     }
 
     for (i=0; i < MAX_SERVERS && net.listenServers[i]; i++) {
       for (j=0; j < MAX_SERVERS; j++) {
         if (nd.tunConn[j].server == net.listenServers[i]) {
-          sprintf(lb.log, "TUNNEL listening on: %s", IP2String(lb.tmp, net.listenServers[i]));
-          logMesg(lb.log, LOG_INFO);
+          LSM(LOG_INFO, "listening on %s", IP2String(lb.tmp, net.listenServers[i]))
           break;
         }
       }
@@ -343,22 +331,9 @@ void __cdecl init(void* arg) {
 
 void* main(void* arg) {
 
-  gd.running[TUNNEL_IDX] = true;
-
-  logMesg("TUNNEL starting", LOG_INFO);
-
-  _beginthread(init, 0, 0);
-
-  int i;
-  fd_set readfds;
-  timeval tv = { 20, 0 };
-
-  do {
-
-    net.busy[TUNNEL_IDX] = false;
+  SERVICESTART(TUNNEL_IDX)
 
     if (!nd.tunConn[0].ready) { Sleep(1000); continue; }
-    if (!net.ready[TUNNEL_IDX]) { Sleep(1000); continue; }
     if (net.refresh) { Sleep(1000); continue; }
 
     FD_ZERO(&readfds);
@@ -370,9 +345,9 @@ void* main(void* arg) {
 
       ld.t = time(NULL);
 
-      if (net.ready[TUNNEL_IDX]) {
+      if (*ld.nr) {
 
-        net.busy[TUNNEL_IDX] = true;
+        *ld.ib = true;
 
         for (i=0; i < MAX_SERVERS && nd.tunConn[i].ready; i++)
 
@@ -385,9 +360,7 @@ void* main(void* arg) {
 
     } else ld.t = time(NULL);
 
-  } while (gd.running[TUNNEL_IDX]);
-
-  cleanup(1);
+  SERVICEEND
 }
 
 }

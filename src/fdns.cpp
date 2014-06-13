@@ -26,12 +26,14 @@ void cleanup(int et) {
       closed = true;
     }
 
-  if (closed) logMesg("FDNS cleared network connections", LOG_DEBUG);
+  if (closed) {
+    LSM(LOG_DEBUG, "cleared network connections")
+  }
 
   if (et) {
-    gd.running[FDNS_IDX] = false;
+    *ld.ir = false;
     Sleep(1000);
-    logMesg("FDNS stopped", LOG_INFO);
+    LSM(LOG_NOTICE, "stopped")
     pthread_exit(NULL);
   }
   return;
@@ -39,19 +41,45 @@ void cleanup(int et) {
 
 void stop() {
   if (config.fdns && gd.running[FDNS_IDX]) {
-    logMesg("Stopping FDNS", LOG_NOTICE);
-    gd.running[FDNS_IDX] = false;
+    *ld.ir = false;
+    LSM(LOG_NOTICE, "stopping")
     cleanup(0);
+    Sleep(1000);
   }
 }
 
 void start() {
   if (config.fdns && !gd.running[FDNS_IDX]) {
     pthread_create(&gd.threads[FDNS_TIDX], NULL, main, NULL);
+    Sleep(1000);
   }
 }
 
-//todo: http
+#if HTTP
+// HTTP Service status page
+bool buildSP(void* arg) {
+
+  HTTP_SPHEAD(0)
+
+  int i=0,j=0;
+
+  if (!nd.fdnsConn[0].ready) {
+    fp += sprintf(fp, "<p>Waiting for interface</p>\n");
+    HTTP_SPFOOT
+  }
+
+  fp += sprintf(fp, "<table border=\"0\" cellspacing=\"9\" width=\"800\"><tr><th>Local Host/Port</th></tr>");
+
+  for (; i < MAX_SERVERS && net.listenServers[i]; i++)
+    for (; j < MAX_SERVERS; j++)
+      if (nd.fdnsConn[j].server == net.listenServers[i])
+        fp += sprintf(fp, "<tr><td>%s / %d</td></tr>", IP2String(lb.tmp, nd.fdnsConn[j].server), FDNSPORT);
+
+  fp += sprintf(fp, "</table>\n<br/>\n<p>Response ip: %s</p>\n<br/>\n", config.fdnsip);
+
+  HTTP_SPFOOT
+}
+#endif
 
 void sendResponse(MYBYTE sndx) {
 
@@ -63,7 +91,7 @@ void sendResponse(MYBYTE sndx) {
 
   r->sockLen = sizeof(r->remote);
   r->flags = 0;
-  r->bytes = recvfrom(nd.fdnsConn[sndx].sock, m, DNSMSG_SIZE, r->flags, (sockaddr*) &r->remote, &r->sockLen);
+  r->bytes = recvfrom(nd.fdnsConn[sndx].sock, m, FDNSMSG_SIZE, r->flags, (sockaddr*) &r->remote, &r->sockLen);
 
   if (r->bytes < 0) return;
 
@@ -91,11 +119,18 @@ void __cdecl init(void* arg) {
 
   bool bindfailed;
   int i, j, nRet;
+  char* ip4str = ld.ip4str;
 
-  ld.ip4str = strdup(config.fdnsip);
+  if (isIP(config.fdnsip)) {
+    LSM(LOG_INFO, "responding with ip address %s", config.fdnsip)
+    strcpy(ld.ip4str, config.fdnsip);
+  } else {
+    LSM(LOG_NOTICE, "no/invalid ip address set, responding with 127.0.0.1")
+    strcpy(ld.ip4str, "127.0.0.1");
+  }
 
   for (int i=0; i < 4; i++)
-    ld.ip4[i] = atoi(strsep(&ld.ip4str, "."));
+    ld.ip4[i] = atoi(strsep(&ip4str, "."));
 
   do {
 
@@ -110,22 +145,20 @@ void __cdecl init(void* arg) {
       nd.fdnsConn[i].sock = socket(AF_INET, SOCK_DGRAM, 0);
 
       if (nd.fdnsConn[i].sock == INVALID_SOCKET) {
-        sprintf(lb.log, "FDNS socket error %u", WSAGetLastError());
-        logMesg(lb.log, LOG_NOTICE);
+        showSockError(ld.sn, GetLastError());
         bindfailed = true;
         continue;
       }
 
       nd.fdnsConn[i].addr.sin_family = AF_INET;
       nd.fdnsConn[i].addr.sin_addr.s_addr = net.listenServers[j];
-      nd.fdnsConn[i].addr.sin_port = htons(DNSPORT);
+      nd.fdnsConn[i].addr.sin_port = htons(FDNSPORT);
 
       setsockopt(nd.fdnsConn[i].sock, SOL_SOCKET, SO_REUSEADDR, "1", sizeof(int));
       nRet = bind(nd.fdnsConn[i].sock, (sockaddr*) &nd.fdnsConn[i].addr, sizeof(struct sockaddr_in));
 
       if (nRet == SOCKET_ERROR) {
-        sprintf(lb.log, "FDNS: cannot bind dns port, error %u", WSAGetLastError());
-        logMesg(lb.log, LOG_NOTICE);
+        LSM(LOG_NOTICE, "cannot bind dns port, error %u", WSAGetLastError())
         bindfailed = true;
         closesocket(nd.fdnsConn[i].sock);
         continue;
@@ -137,26 +170,25 @@ void __cdecl init(void* arg) {
       nd.fdnsConn[i].ready = true;
       nd.fdnsConn[i].server = net.listenServers[j];
       nd.fdnsConn[i].mask = net.listenMasks[j];
-      nd.fdnsConn[i].port = DNSPORT;
+      nd.fdnsConn[i].port = FDNSPORT;
 
       i++;
     }
 
     nd.maxFD++;
 
-    if (bindfailed) net.failureCounts[FDNS_IDX]++;
-    else net.failureCounts[FDNS_IDX] = 0;
+    if (bindfailed) (*ld.fc)++;
+    else *ld.fc = 0;
 
     if (!nd.fdnsConn[0].ready) {
-      logMesg("FDNS no interface ready, waiting...", LOG_NOTICE);
+      LSM(LOG_NOTICE, "no interface ready, waiting...")
       continue;
     }
 
     for (i=0; i < MAX_SERVERS && net.listenServers[i]; i++) {
       for (j=0; j < MAX_SERVERS; j++) {
         if (nd.fdnsConn[j].server == net.listenServers[i]) {
-          sprintf(lb.log, "FDNS listening on: %s", IP2String(lb.tmp, net.listenServers[i]));
-          logMesg(lb.log, LOG_INFO);
+          LSM(LOG_INFO, "listening on %s", IP2String(lb.tmp, net.listenServers[i]));
           break;
         }
       }
@@ -170,22 +202,9 @@ void __cdecl init(void* arg) {
 
 void* main(void* arg) {
 
-  gd.running[FDNS_IDX] = true;
-
-  logMesg("FDNS starting", LOG_INFO);
-
-  _beginthread(init, 0, 0);
-
-  int i;
-  fd_set readfds;
-  timeval tv = { 20, 0 };
-
-  do {
-
-    net.busy[FDNS_IDX] = false;
+  SERVICESTART(FDNS_IDX)
 
     if (!nd.fdnsConn[0].ready) { Sleep(1000); continue; }
-    if (!net.ready[FDNS_IDX]) { Sleep(1000); continue; }
     if (net.refresh) { Sleep(1000); continue; }
 
     FD_ZERO(&readfds);
@@ -197,9 +216,9 @@ void* main(void* arg) {
 
       ld.t = time(NULL);
 
-      if (net.ready[FDNS_IDX]) {
+      if (*ld.nr) {
 
-        net.busy[FDNS_IDX] = true;
+        *ld.ib = true;
 
         for (i=0; i < MAX_SERVERS && nd.fdnsConn[i].ready; i++)
           if (FD_ISSET(nd.fdnsConn[i].sock, &readfds)) sendResponse(i);
@@ -208,11 +227,8 @@ void* main(void* arg) {
 
     } else ld.t = time(NULL);
 
-  } while (gd.running[FDNS_IDX]);
+  SERVICEEND
 
-  free(ld.ip4str);
-
-  cleanup(1);
 }
 
 }

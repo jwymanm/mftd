@@ -8,6 +8,7 @@
 #include "core.h"
 #include "net.h"
 #include "monitor.h"
+#include "http.h"
 
 namespace monitor {
 
@@ -18,28 +19,42 @@ LocalData ld;
 void cleanup (int et) {
 
   if (et) {
-    gd.running[MONITOR_IDX] = false;
-    logMesg("Monitor stopped", LOG_INFO);
+    *ld.ir = false;
+    Sleep(1000);
+    LSM(LOG_NOTICE, "stopped")
     pthread_exit(NULL);
   } else {
-    logMesg("Monitor cleaned up", LOG_INFO);
     return;
   }
 }
 
 void stop() {
   if (config.monitor && gd.running[MONITOR_IDX]) {
-    gd.running[MONITOR_IDX] = false;
+    *ld.ir = false;
+    LSM(LOG_NOTICE, "stopping")
     cleanup(0);
+    Sleep(1000);
   }
 }
 
 void start() {
-  if (config.monitor && !gd.running[MONITOR_IDX])
+  if (config.monitor && !gd.running[MONITOR_IDX]) {
     pthread_create(&gd.threads[MONITOR_TIDX], NULL, main, NULL);
+    Sleep(1000);
+  }
 }
 
-//todo: http
+#if HTTP
+bool buildSP(void* arg) {
+
+  HTTP_SPHEAD(0)
+
+  fp += sprintf(fp, "<p>Waiting</p>\n<br/>\n");
+
+  HTTP_SPFOOT
+
+}
+#endif
 
 void __cdecl init(void* arg) {
 
@@ -49,17 +64,16 @@ void __cdecl init(void* arg) {
 
     if (getMacAddress(mon.mac, config.monip) == NO_ERROR) {
       IFAddr2String(buff, mon.mac, sizeof(mon.mac));
-      sprintf(lb.log, "MONITOR found attached device with mac: %s", buff);
-      logMesg(lb.log, LOG_INFO);
+      LSM(LOG_INFO, "found attached device with mac %s", buff)
       mon.macfound = true;
     } else {
-      logMesg("MONITOR no attached device responding yet", LOG_INFO);
+      LSM(LOG_INFO, "no attached device responding yet")
       mon.macfound = false;
     }
 
     Sleep(60000);
 
-  } while (gd.running[MONITOR_IDX]);
+  } while (*ld.ir);
 
   _endthread();
   return;
@@ -67,35 +81,19 @@ void __cdecl init(void* arg) {
 
 void* main(void* arg) {
 
-  gd.running[MONITOR_IDX] = true;
-
-  logMesg("MONITOR starting", LOG_INFO);
-
-  _beginthread(init, 0, NULL);
-
-  do {
-
-    net.busy[MONITOR_IDX] = false;
-
-    if (!net.ready[MONITOR_IDX]) { Sleep(1000); continue; }
+  SERVICESTART(MONITOR_IDX)
 
     // record date of found
     if (getAdapterData()) {
-      sprintf(lb.log, "MONITOR adapter with description \"%s\" found", config.ifname);
-      logMesg(lb.log, LOG_INFO);
-      if (!adptr.ipset) {
-        setAdptrIP(); core::stopThreads();
-      }
-      core::startThreads();
+      LSM(LOG_INFO, "adapter with description \"%s\" found", config.ifname)
+      //core::startThreads();
     // record date of not found
     } else {
-      sprintf(lb.log, "MONITOR waiting for adapter with description \"%s\" to be available", config.ifname);
-      logMesg(lb.log, LOG_INFO);
+      LSM(LOG_INFO, "waiting for adapter with description \"%s\" to be available", config.ifname)
     }
 
-  } while (gd.running[MONITOR_IDX]);
+  SERVICEEND
 
-  cleanup(1);
 }
 
 }

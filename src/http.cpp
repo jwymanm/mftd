@@ -14,6 +14,7 @@
 namespace http {
 
 LocalBuffers lb;
+LocalData ld;
 NetworkData nd;
 
 Codes resp = {
@@ -23,9 +24,11 @@ Codes resp = {
 };
 
 HTML html = {
+  "<!HTML>\n<html>\n",
+  "<head>\n<title>%s</title>\n<style>%s</style>\n<meta http-equiv=\"refresh\" content=\"60\">\n<meta http-equiv=\"cache-control\" content=\"no-cache\">\n</head>\n",
   "",
-  "<!HTML>\n<html>\n<head>\n<style>\nbody{color:#333;font-family:verdana;font-size:9pt}th,td{font-size:8pt;text-align:left}</style>\n<title>%s</title>\n<meta http-equiv=\"refresh\" content=\"60\">\n<meta http-equiv=\"cache-control\" content=\"no-cache\">\n</head>\n",
-  "<body>\n<h1>%s</h1>",
+  #include "http.css"
+  "<body>\n<h1>%s</h1>\n",
   "<td>%s</td>",
   "\n</body>",
   "\n</html>"
@@ -35,34 +38,34 @@ void cleanup(int et) {
 
   if (nd.httpConn.ready) {
     closesocket(nd.httpConn.sock);
-    logMesg("HTTP cleared network connections", LOG_DEBUG);
+    LSM(LOG_DEBUG, "cleared network connections")
   }
 
   if (et) {
-    gd.running[HTTP_IDX] = false;
+    *ld.ir = false;
     Sleep(1000);
-    logMesg("HTTP stopped", LOG_INFO);
+    LSM(LOG_NOTICE, "stopped")
     pthread_exit(NULL);
-  }
-
-  return;
+  } else return;
 }
 
 void stop() {
   if (config.http && gd.running[HTTP_IDX]) {
-    logMesg("Stopping HTTP", LOG_NOTICE);
-    gd.running[HTTP_IDX] = false;
+    *ld.ir = false;
+    LSM(LOG_NOTICE, "stopping")
     cleanup(0);
+    Sleep(1000);
   }
 }
 
 void start() {
   if (config.http && !gd.running[HTTP_IDX]) {
     pthread_create(&gd.threads[HTTP_TIDX], NULL, main, NULL);
+    Sleep(1000);
   }
 }
 
-Data* initDP(const char* name, void* arg, int memSize) {
+Data* initDP(const char* sname, void* arg, int memSize) {
 
   Data* h = (Data*) arg;
 
@@ -70,16 +73,23 @@ Data* initDP(const char* name, void* arg, int memSize) {
   h->res.dp = (char*) calloc(1, h->res.memSize);
 
   if (!h->res.dp) {
-    sprintf(lb.log, "%s Memory Error in initDP", name);
-    logMesg(lb.log, LOG_NOTICE);
+    LM(LOG_NOTICE, "%s memory error initializing status for HTTP", sname)
     return 0;
   }
 
   return h;
 }
 
+// HTTP Service status page
 bool buildSP(void* arg) {
-  return false;
+
+  HTTP_SPHEAD(0)
+
+  int i=0;
+
+  fp += sprintf(fp, "<p>Listening on %s port %d</p>\n<br/>\n", IP2String(lb.tmp, nd.httpConn.server), nd.httpConn.port);
+
+  HTTP_SPFOOT
 }
 
 void buildHP(Data* h) {
@@ -87,10 +97,10 @@ void buildHP(Data* h) {
   h->res.code = resp;
   h->html = html;
 
-  char respBuff[sizeof(Response)];
+  char respBuff[sizeof(HTML)];
   char* rB = respBuff;
-  char* dp[SERVICECOUNT-1];
-  int i = 0, j = 0, sizes[SERVICECOUNT-1];
+  char* dp[SERVICECOUNT];
+  int i = 0, j = 0, sizes[SERVICECOUNT];
 
   tm* ttm = localtime(&h->req.t);
   strftime(lb.tmp, sizeof(lb.tmp), "%a, %d %b %Y %H:%M:%S", ttm);
@@ -99,24 +109,26 @@ void buildHP(Data* h) {
 
   char* contentStart = rB;
 
-  rB += sprintf(rB, h->html.htmlStart, h->html.htmlTitle);
+  rB += sprintf(rB, h->html.htmlStart);
+  rB += sprintf(rB, h->html.htmlHead, h->html.htmlTitle, h->html.htmlStyle);
   rB += sprintf(rB, h->html.bodyStart, gd.displayName);
-  rB += sprintf(rB, "\n<h2>Services running</h2>\n<h3>");
+  rB += sprintf(rB, "\n<h2>SERVICES RUNNING</h2>\n<h3>");
 
 #if MONITOR
   if (config.monitor) {
     rB += sprintf(rB, "%s ", gd.serviceNames[MONITOR_IDX]);
-//    if (monitor::buildSP((void*)h))
-//      dp[j] = h->res.dp; sizes[j] = h->res.bytes; j++;
+    if (monitor::buildSP((void*)h)) {
+      dp[j] = h->res.dp; sizes[j] = h->res.bytes; j++;
+    }
   }
 #endif
 
 #if FDNS
   if (config.fdns) {
     rB += sprintf(rB, "%s ", gd.serviceNames[FDNS_IDX]);
-//    if (fdns::buildSP((void*)h)) {
-//      dp[j] = h->res.dp; sizes[j] = h->res.bytes; j++;
-//    }
+    if (fdns::buildSP((void*)h)) {
+      dp[j] = h->res.dp; sizes[j] = h->res.bytes; j++;
+    }
   }
 #endif
 
@@ -143,7 +155,7 @@ void buildHP(Data* h) {
     dp[j] = h->res.dp; sizes[j] = h->res.bytes; j++;
   }
 
-  rB += sprintf(rB, "</h3>\n<h2>Service config/status</h2>\n");
+  rB += sprintf(rB, "</h3>\n<h2>SERVICE STATUS</h2>\n");
 
   h->res.memSize = rB - respBuff;
 
@@ -154,7 +166,7 @@ void buildHP(Data* h) {
   h->res.dp = (char*)calloc(1, h->res.memSize);
 
   if (!h->res.dp) {
-    logMesg("HTTP Memory Error in buildHP", LOG_NOTICE);
+    LSM(LOG_NOTICE, "memory error in buildHP()")
     closesocket(h->req.sock);
     free(h);
     return;
@@ -179,6 +191,7 @@ void buildHP(Data* h) {
 
   MYBYTE x = sprintf(lb.tmp, "%u", (rB - contentStart));
   memcpy((contentStart - HTTP_LOFFT), lb.tmp, x);
+
   h->res.bytes = rB - h->res.dp;
   return;
 }
@@ -189,7 +202,7 @@ void __cdecl sendHTTP(void* arg) {
   timeval tv;
   fd_set writefds;
   int sent = 0;
-  while (gd.running[HTTP_IDX] && h->res.bytes > 0) {
+  while (*ld.ir && h->res.bytes > 0) {
     tv.tv_sec = 5;
     tv.tv_usec = 0;
     FD_ZERO(&writefds);
@@ -218,16 +231,13 @@ void procHTTP(Data* h) {
 
   fd_set rfds;
 
-  timeval tv;
-  tv.tv_sec = 2;
-  tv.tv_usec = 0;
+  timeval tv = { 5, 0 };
 
   FD_ZERO(&rfds);
   FD_SET(h->req.sock, &rfds);
 
   if (!select((h->req.sock + 1), &rfds, NULL, NULL, &tv)) {
-    sprintf(lb.log, "Client %s, HTTP Message Receive failed", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr));
-    logMesg(lb.log, LOG_INFO);
+    LSM(LOG_DEBUG, "client %s, message receive failed", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr))
     closesocket(h->req.sock);
     free(h);
     return;
@@ -238,22 +248,19 @@ void procHTTP(Data* h) {
   errno = WSAGetLastError();
 
   if (errno || h->req.bytes <= 0) {
-    sprintf(lb.log, "HTTP client %s, Message Receive failed, WSAError %u", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr), errno);
-    logMesg(lb.log, LOG_INFO);
+    LSM(LOG_DEBUG, "client %s, message receive failed, WSAError %u", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr), errno)
     closesocket(h->req.sock);
     free(h);
     return;
   } else {
-    sprintf(lb.log, "HTTP client %s, Request Received", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr));
-    logMesg(lb.log, LOG_INFO);
+    LSM(LOG_INFO, "client %s, request received", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr))
   }
 
   if (nd.httpClients[0] && !findServer(nd.httpClients, 8, h->req.remote.sin_addr.s_addr)) {
-    sprintf(lb.log, "HTTP client %s, Access Denied", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr));
-    logMesg(lb.log, LOG_INFO);
-    h->res.dp = resp.send403;//(char*)calloc(1, sizeof(hd.send403));
+    LSM(LOG_INFO, "client %s, access denied", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr))
+    h->res.dp = resp.send403;
     h->res.memSize = sizeof(resp.send403);
-    h->res.bytes = strlen(resp.send403);//sprintf(req->dp, hd.send403);
+    h->res.bytes = strlen(resp.send403);
     _beginthread(sendHTTP, 0, (void*)h);
     return;
   }
@@ -273,14 +280,12 @@ void procHTTP(Data* h) {
     _beginthread(sendHTTP, 0, (void*)h);
   } else {
     if (fp) {
-      sprintf(lb.log, "HTTP client %s, %s not found", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr), fp);
-      logMesg(lb.log, LOG_INFO);
+      LSM(LOG_INFO, "client %s, %s not found", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr), fp)
     } else {
-      sprintf(lb.log, "HTTP client %s, invalid request", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr));
-      logMesg(lb.log, LOG_INFO);
+      LSM(LOG_INFO, "client %s, invalid request", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr))
     }
-    h->res.dp = resp.send404; //(char*)calloc(1, sizeof(send404));
-    h->res.bytes = strlen(resp.send404);//sprintf(req->dp, hd.send404);
+    h->res.dp = resp.send404;
+    h->res.bytes = strlen(resp.send404);
     h->res.memSize = sizeof(resp.send404);
     _beginthread(sendHTTP, 0, (void*)h);
   }
@@ -310,25 +315,21 @@ void __cdecl init(void* arg) {
     if (config.httpaddr) {
       mySplit(name, value, config.httpaddr, ':');
       if (isIP(name)) {
-        nd.httpConn.loaded = true;
         nd.httpConn.server = inet_addr(name);
       } else {
         nd.httpConn.loaded = false;
-        sprintf(lb.log, "HTTP section [HTTP], invalid IP address %s, ignored", name);
-        logMesg(lb.log, LOG_NOTICE);
+        LSM(LOG_NOTICE, "section [HTTP], invalid IP address %s, ignored", name)
       }
       if (value[0]) {
         if (atoi(value)) nd.httpConn.port = atoi(value);
   	    else {
           nd.httpConn.loaded = false;
-          sprintf(lb.log, "HTTP section [HTTP], invalid port %s, ignored", value);
-	        logMesg(lb.log, LOG_NOTICE);
+          LSM(LOG_NOTICE, "section [HTTP], invalid port %s, ignored", value)
  	      }
       }
       if (nd.httpConn.server != inet_addr("127.0.0.1") && !findServer(net.allServers, MAX_SERVERS, nd.httpConn.server)) {
 	      nd.httpConn.loaded = false;
-	      sprintf(lb.log, "HTTP section [HTTP], %s not available, ignored", name);
-	      logMesg(lb.log, LOG_NOTICE);
+        LSM(LOG_NOTICE, "section [HTTP], %s not available, ignored", name)
         bindfailed = true;
       }
     }
@@ -336,8 +337,7 @@ void __cdecl init(void* arg) {
     if (config.httpclient) {
       if (isIP(config.httpclient)) addServer(nd.httpClients, 8, inet_addr(config.httpclient));
 	    else {
-        sprintf(lb.log, "HTTP section [HTTP], invalid client IP %s, ignored", config.httpclient);
-        logMesg(lb.log, LOG_NOTICE);
+        LSM(LOG_NOTICE, "section [HTTP], invalid client IP %s, ignored", config.httpclient)
       }
     }
 
@@ -349,8 +349,7 @@ void __cdecl init(void* arg) {
     nd.httpConn.sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
 
     if (nd.httpConn.sock == INVALID_SOCKET) {
-      sprintf(lb.log, "HTTP socket error %u", WSAGetLastError());
-      logMesg(lb.log, LOG_NOTICE);
+      LSM(LOG_NOTICE, "socket error %u", WSAGetLastError());
       bindfailed = true;
     } else {
 
@@ -361,16 +360,14 @@ void __cdecl init(void* arg) {
       int nRet = bind(nd.httpConn.sock, (sockaddr*)&nd.httpConn.addr, sizeof(sockaddr_in));
 
       if (nRet == SOCKET_ERROR) {
-        sprintf(lb.log, "HTTP interface %s TCP port %u not available", IP2String(lb.tmp, nd.httpConn.server), nd.httpConn.port);
-        logMesg(lb.log, LOG_NOTICE);
+        LSM(LOG_NOTICE, "interface %s TCP port %u not available", IP2String(lb.tmp, nd.httpConn.server), nd.httpConn.port)
         bindfailed = true;
         closesocket(nd.httpConn.sock);
       } else {
         nRet = listen(nd.httpConn.sock, SOMAXCONN);
 
         if (nRet == SOCKET_ERROR) {
-          sprintf(lb.log, "HTTP %s TCP port %u error on listen", IP2String(lb.tmp, nd.httpConn.server), nd.httpConn.port);
-          logMesg(lb.log, LOG_NOTICE);
+          LSM(LOG_NOTICE, "%s TCP port %u error on listen", IP2String(lb.tmp, nd.httpConn.server), nd.httpConn.port)
           bindfailed = true;
           closesocket(nd.httpConn.sock);
         } else {
@@ -383,12 +380,11 @@ void __cdecl init(void* arg) {
 
     nd.maxFD++;
 
-    if (bindfailed) net.failureCounts[HTTP_IDX]++;
-    else net.failureCounts[HTTP_IDX] = 0;
+    if (bindfailed) (*ld.fc)++;
+    else *ld.fc = 0;
 
     if (nd.httpConn.ready) {
-      sprintf(lb.log, "HTTP service status url: http://%s:%u", IP2String(lb.tmp, nd.httpConn.server), nd.httpConn.port);
-      logMesg(lb.log, LOG_INFO);
+      LSM(LOG_INFO, "service status url: http://%s:%u", IP2String(lb.tmp, nd.httpConn.server), nd.httpConn.port)
       FILE* f = fopen(lb.htm, "wt");
       if (f) {
         fprintf(f, "<!html><html><head><meta http-equiv=\"refresh\" content=\"0;url=http://%s:%u\"</head></html>", IP2String(lb.tmp, nd.httpConn.server), nd.httpConn.port);
@@ -410,30 +406,18 @@ void __cdecl init(void* arg) {
 
 void* main(void* arg) {
 
-  gd.running[HTTP_IDX] = true;
-
-  logMesg("HTTP starting", LOG_INFO);
-
-  _beginthread(init, 0, 0);
-
-  fd_set readfds;
-  timeval tv = { 20, 0 };
-
-  do {
-
-    net.busy[HTTP_IDX] = false;
+  SERVICESTART(HTTP_IDX)
 
     if (!nd.httpConn.ready) { Sleep(1000); continue; }
-    if (!net.ready[HTTP_IDX]) { Sleep(1000); continue; }
     if (net.refresh) { Sleep(1000); continue; }
 
     FD_ZERO(&readfds);
 
-    if (nd.httpConn.ready) FD_SET(nd.httpConn.sock, &readfds);
+    FD_SET(nd.httpConn.sock, &readfds);
 
     if (select(nd.maxFD, &readfds, NULL, NULL, &tv) != SOCKET_ERROR) {
-      if (net.ready[HTTP_IDX]) {
-        net.busy[HTTP_IDX] = true;
+      if (*ld.nr) {
+        *ld.ib = true;
         if (nd.httpConn.ready && FD_ISSET(nd.httpConn.sock, &readfds)) {
           Data* h = (Data*) calloc(1, sizeof(Data));
           if (h) {
@@ -442,18 +426,15 @@ void* main(void* arg) {
             h->req.sock = accept(nd.httpConn.sock, (sockaddr*)&h->req.remote, &h->req.sockLen);
             if (h->req.sock == INVALID_SOCKET) {
               free(h);
-              if (!net.ready[HTTP_IDX]) break;
-              sprintf(lb.log, "HTTP accept failed, error %u\n", WSAGetLastError());
-              logMesg(lb.log, LOG_NOTICE);
+              if (!*ld.nr) break;
+              LSM(LOG_NOTICE, "accept failed, error %u", WSAGetLastError());
             } else procHTTP(h);
           } else logMesg("HTTP memory error", LOG_NOTICE);
         }
       }
     }
 
-  } while (gd.running[HTTP_IDX]);
-
-  cleanup(1);
+  SERVICEEND
 
 }
 

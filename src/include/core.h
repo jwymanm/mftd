@@ -42,7 +42,9 @@
 
 #define MALLOC(x) HeapAlloc(GetProcessHeap(), 0, (x))
 #define FREE(x) HeapFree(GetProcessHeap(), 0, (x))
-#define MATCH(s, n) strcasecmp(section, s) == 0 && strcasecmp(name, n) == 0
+#define MATCH(s,n) strcasecmp(section, s) == 0 && strcasecmp(name, n) == 0
+#define LM(n,...) sprintf(lb.log, __VA_ARGS__), logMesg(lb.log, n);
+#define LSM(n,s,...) sprintf(lb.log, "%s " s, ld.sn, ##__VA_ARGS__), logMesg(lb.log, n);
 
 #define LOG_NONE 0
 #define LOG_NOTICE 1
@@ -52,6 +54,21 @@
 #define SERVICETOTAL 5
 #define SERVICECOUNT MONITOR + FDNS + TUNNEL + DHCP + HTTP
 #define SERVICENAMES { "MONITOR", "FDNS", "TUNNEL", "DHCP", "HTTP" }
+#define SERVICETOSECS 20
+#define SERVICETOMSECS 0
+#define SERVICESTART(x) \
+  ld.ir = &gd.running[x]; *ld.ir = true;\
+  ld.ib = &net.busy[x];\
+  ld.nr = &net.ready[x];\
+  ld.fc = &net.failureCounts[x];\
+  ld.sn = gd.serviceNames[x];\
+  LSM(LOG_INFO, "starting");\
+  _beginthread(init, 0, 0);\
+  int i; fd_set readfds; timeval tv = { SERVICETOSECS, SERVICETOMSECS };\
+  do {\
+    *ld.ib = false;\
+    if (!*ld.nr) { Sleep(1000); continue; }
+#define SERVICEEND } while (*ld.ir); cleanup(1);
 
 #define MONITOR_IDX 0
 #define FDNS_IDX 1
@@ -133,7 +150,8 @@ extern "C" GConfiguration config;
 extern "C" GSetting gs;
 
 void debug(int level, const char* xstr, void* mesg);
-void showError(DWORD enumber);
+void showError(char* sname, DWORD errn);
+void showSockError(char* sname, DWORD errn);
 void logMesg(char* mesg, int level);
 void startupMesg();
 void __cdecl logThread(void* arg);
@@ -155,7 +173,7 @@ typedef struct {
 } LocalData;
 
 typedef struct {
-  char *mesg;
+  char* mesg;
   int level;
 } LogData;
 

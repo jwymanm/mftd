@@ -199,7 +199,7 @@ bool getAdapterData()  {
         for (i = 0; pUnicast != NULL; i++) {
           WSAAddressToStringA(pUnicast->Address.lpSockaddr, pUnicast->Address.iSockaddrLength, NULL, ipstr, &size);
           // TODO add netmask matcher also...
-          printf("ip: %s\r\n", ipstr);
+          //printf("ip: %s\r\n", ipstr);
           if (!strcmp(ipstr, config.adptrip)) adptr.ipset = true;
           pUnicast = pUnicast->Next;
         }
@@ -213,8 +213,8 @@ bool getAdapterData()  {
   } else {
 
     if (dwRetVal == ERROR_NO_DATA)
-      logMesg("Net: No addresses were found for the requested parameters", LOG_DEBUG);
-    else showError(dwRetVal);
+      logMesg("no addresses were found for the requested parameters", LOG_DEBUG);
+    else showError(NULL, dwRetVal);
   }
 
   if (pA) FREE(pA);
@@ -235,8 +235,7 @@ int setAdptrIP() {
     //possibly fallback to just adding ip if above fails
     //AddIPAddress(inet_addr(config.adptrip), inet_addr(config.netmask), adptr.idx4, &NTEContext, &NTEInstance);
     //sprintf(lb.log, "Net: Added IP %s to adapter", config.adptrip);
-    sprintf(lb.log, "adapter IP statically set to: %s mask %s", config.adptrip, config.netmask);
-    logMesg(lb.log, LOG_INFO);
+    LM(LOG_INFO, "adapter IP statically set to: %s mask %s", config.adptrip, config.netmask);
   } else {
     sprintf (sysstr, "netsh interface ip set address \"%s\" dhcp", adptr.fname);
     system(sysstr);
@@ -311,8 +310,7 @@ void setServerIFs() {
 
   if (gs.adptr && getAdapterData()) {
     if (!adptr.ipset) {
-      setAdptrIP();
-      Sleep(2000);
+      setAdptrIP(); Sleep(2000);
     }
     adapterData = true;
   }
@@ -321,37 +319,37 @@ void setServerIFs() {
 
   if (gs.adptr && config.bindonly) {
     if (adapterData) {
-      logMesg("bindonly set, using adapter interface ip only", LOG_INFO);
+      LM(LOG_INFO, "bindonly set, using adapter interface ip only")
       net.listenServers[0] = inet_addr(config.adptrip);
       net.listenMasks[0] = inet_addr(config.netmask);
       return;
     } else
-      logMesg("bindonly set but adapter interface is not available, ignoring", LOG_NOTICE);
+      LM(LOG_INFO, "bindonly set but adapter interface is not available, ignoring")
   }
+  // TODO fix to make this more logical
 
   if (net.staticServers[0]) {
-    logMesg("using static interface ip address(es): ", LOG_INFO);
+    LM(LOG_INFO, "using static interface ip address(es): ")
     int i=0;
     bool nomatch = true;
     for (; i < MAX_SERVERS && net.staticServers[i]; i++) {
-      sprintf(lb.log, "  %s", IP2String(lb.tmp, net.staticServers[i]));
-      logMesg(lb.log, LOG_INFO);
+      LM(LOG_INFO, "  %s", IP2String(lb.tmp, net.staticServers[i]));
       net.listenServers[i] = net.staticServers[i];
       net.listenMasks[i] = net.staticServers[i];
       if (gs.adptr && net.staticServers[i] == inet_addr(config.adptrip)) nomatch = false;
     }
     if (gs.adptr && nomatch) {
-      logMesg("no match for adapter ip under static interfaces and bindonly not set", LOG_NOTICE);
+      LM(LOG_NOTICE, "no match for adapter ip under static interfaces and bindonly not set")
     }
   } else {
     if (gs.adptr) {
-      logMesg("no static interfaces found, falling back to adapter ip", LOG_NOTICE);
+      LM(LOG_NOTICE, "no static interfaces found, falling back to adapter ip")
       if (!gs.adptrdhcp) {
         net.listenServers[0] = inet_addr(config.adptrip);
         net.listenMasks[0] = inet_addr(config.netmask);
       }
     } else {
-      logMesg("no static interfaces found and no adapter ip", LOG_NOTICE);
+      LM(LOG_NOTICE, "no static interfaces found and no adapter ip")
     }
   }
 
@@ -399,8 +397,7 @@ bool dCWait(int idx) {
     // wait up to max 40 tries and then reset fc
     if (fc >= 40) fc = net.failureCounts[idx] = 0;
     eventWait = 2000 * fc;
-    sprintf(lb.log, "%s failureCount %d, sleeping %d msecs and retrying failed service", sname, fc, eventWait);
-    logMesg(lb.log, LOG_INFO);
+    LM(LOG_INFO, "%s failureCount %d, sleeping %d msecs and retrying failed service", sname, fc, eventWait)
     Sleep(eventWait);
     net.ready[idx] = false;
     while (net.busy[idx]) Sleep(1000);
@@ -409,8 +406,7 @@ bool dCWait(int idx) {
     net.failureCounts[idx] = 0;
   }
 
-  sprintf(lb.log, "%s waiting for network changes", sname);
-  logMesg(lb.log, LOG_INFO);
+  LM(LOG_INFO, "%s waiting for network changes", sname)
 
   while (!net.refresh) Sleep(1000);
 
@@ -419,14 +415,12 @@ bool dCWait(int idx) {
   while (net.busy[idx]) Sleep(1000);
 
   while (net.refresh) {
-    sprintf(lb.log, "%s waiting on detectChange", sname);
-    logMesg(lb.log, LOG_DEBUG);
+    LM(LOG_DEBUG, "%s waiting on detectChange", sname)
     Sleep(1000);
   }
 
   if (!gs.exit) {
-    sprintf(lb.log, "%s network event, service refreshing", sname);
-    logMesg(lb.log, LOG_INFO);
+    LM(LOG_INFO, "%s network event, service refreshing", sname)
   } else return false;
 
   return true;
@@ -456,7 +450,7 @@ bool detectChange() {
     }
   }
 
-  logMesg("Waiting for network interface changes", LOG_INFO);
+  LM(LOG_INFO, "waiting for network interface changes")
 
   if (WaitForSingleObject(ge.dCol.hEvent, UINT_MAX) == WAIT_OBJECT_0)
     WSACloseEvent(ge.dCol.hEvent);
@@ -466,11 +460,10 @@ bool detectChange() {
   Sleep(2000);
 
   if (!gs.exit) {
-    logMesg("Network event, refreshing", LOG_NOTICE);
+    LM(LOG_NOTICE, "network event, refreshing")
     while (detectBusy()) {
-      sprintf(lb.log, "net.busy: MONITOR: %d FDNS: %d TUNNEL: %d DHCP: %d HTTP: %d",
-        net.busy[MONITOR_IDX], net.busy[FDNS_IDX], net.busy[TUNNEL_IDX], net.busy[DHCP_IDX], net.busy[HTTP_IDX]);
-      logMesg(lb.log, LOG_DEBUG);
+      LM(LOG_DEBUG, "net.busy: MONITOR: %d FDNS: %d TUNNEL: %d DHCP: %d HTTP: %d",
+        net.busy[MONITOR_IDX], net.busy[FDNS_IDX], net.busy[TUNNEL_IDX], net.busy[DHCP_IDX], net.busy[HTTP_IDX])
       Sleep(1000);
     }
   } else {
@@ -496,8 +489,7 @@ int netExit() {
 int netInit() {
 
   getHostName(net.hostname);
-  sprintf(lb.log, "hostname %s", net.hostname);
-  logMesg(lb.log, LOG_NOTICE);
+  LM(LOG_NOTICE, "hostname %s", net.hostname)
 
   if (config.ifname && config.adptrip) {
 
@@ -520,15 +512,18 @@ int netInit() {
   } else {
     // no adapter configured so we don't want to run monitor
     if (config.monitor) {
-      logMesg("monitor disabled due to adapter configuration missing", LOG_NOTICE);
+      LM(LOG_NOTICE, "monitor disabled due to adapter configuration missing")
       config.monitor = false;
     }
   }
 
   MYWORD wVersionReq = MAKEWORD(1,1);
   WSAStartup(wVersionReq, &net.wsa);
-  if (net.wsa.wVersion != wVersionReq)
-    logMesg("WSAStartup error", LOG_INFO);
+
+  if (net.wsa.wVersion != wVersionReq) {
+    LM(LOG_NOTICE, "WSAStartup error")
+    showError(NULL, GetLastError());
+  }
 
   setServerIFs();
 

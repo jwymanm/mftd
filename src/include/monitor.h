@@ -17,6 +17,11 @@ typedef struct {
 } LocalBuffers;
 
 typedef struct {
+  char* sn;
+  bool* ir;
+  bool* ib;
+  bool* nr;
+  int* fc;
 } LocalData;
 
 extern "C" Monitor mon;
@@ -31,6 +36,7 @@ DWORD getMacAddress(unsigned char* mac, const char* ip);
 void cleanup(int et);
 void stop();
 void start();
+bool buildSP(void* arg);
 void __cdecl init(void* arg);
 void* main(void* arg);
 

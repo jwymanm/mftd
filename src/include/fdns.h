@@ -2,10 +2,8 @@
 
 #if FDNS
 
-#define DNSPORT 53
-#define DNSMSG_SIZE 512
-
-extern "C" bool fdns_running;
+#define FDNSPORT 53
+#define FDNSMSG_SIZE 512
 
 namespace fdns {
 
@@ -17,15 +15,20 @@ typedef struct {
 } Request;
 
 typedef struct {
-  char msg[DNSMSG_SIZE];
+  char msg[FDNSMSG_SIZE];
   char tmp[512];
   char log[256];
 } LocalBuffers;
 
 typedef struct {
   time_t t;
-  char* ip4str;
   int ip4[4];
+  char ip4str[20];
+  char* sn;
+  bool* ir;
+  bool* ib;
+  bool* nr;
+  int* fc;
 } LocalData;
 
 typedef struct {
@@ -37,6 +40,7 @@ typedef struct {
 void cleanup(int et);
 void stop();
 void start();
+bool buildSP(void* arg);
 void sendResponse(MYBYTE sndx);
 void __cdecl init(void* arg);
 void* main(void* arg);

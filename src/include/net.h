@@ -58,7 +58,7 @@ MYDWORD calcMask(MYDWORD rangeStart, MYDWORD rangeEnd);
 MYDWORD* findServer(MYDWORD* array, MYBYTE cnt, MYDWORD ip);
 MYDWORD* addServer(MYDWORD* array, MYBYTE maxServers, MYDWORD ip);
 MYDWORD getClassNetwork(MYDWORD ip);
-void getHostName(char *hn);
+void getHostName(char* hn);
 bool getAdapterData();
 int setAdptrIP();
 void getServerIFs();

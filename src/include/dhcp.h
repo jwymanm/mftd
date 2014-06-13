@@ -145,7 +145,13 @@
 #define VM_STANFORD  0x5354414EUL
 #define VM_RFC1048   0x63825363UL
 
-extern bool dhcp_running;
+#define FUSHORT(r) ntohs(*((MYWORD*)r))
+#define FULONG(r) ntohl(*((MYDWORD*)r))
+#define PULONG(r,d) *((MYDWORD*)r) = htonl(d)
+#define PUSHORTSZ(r,d) sizeof(MYWORD); *((MYWORD*)r) = htons(d)
+#define PULONGSZ(r,d) sizeof(MYDWORD); *((MYDWORD*)r) = htonl(d)
+#define FIP(r) *((MYDWORD*)r)
+#define PIP(r,d) *((MYDWORD*)r) = d
 
 namespace dhcp {
 
@@ -369,6 +375,11 @@ typedef struct {
 
 typedef struct {
   time_t t;
+  char* sn;
+  bool* ir;
+  bool* ib;
+  bool* nr;
+  int* fc;
 } LocalData;
 
 typedef struct {
@@ -388,14 +399,8 @@ bool getSection(const char* sectionName, char* buffer, MYBYTE index, char* fileN
 char* strqtype(char* buff, MYBYTE qtype);
 char getRangeInd(MYDWORD ip);
 int MyRecvMess(char* buffer, MYWORD buffsize, SOCKET m_Socket, bool* broadcast, SOCKADDR_IN* remote, socklen_t sockLen);
-MYBYTE pIP(void* raw, MYDWORD data);
-MYBYTE pULong(void* raw, MYDWORD data);
-MYBYTE pUShort(void* raw, MYWORD data);
-MYWORD fUShort(void* raw);
 MYDWORD alad(Request* req);
 MYDWORD chad(Request* req);
-MYDWORD fIP(void* raw);
-MYDWORD fULong(void* raw);
 MYDWORD resad(Request* req);
 MYDWORD sendRepl(Request* req);
 MYDWORD sdmess(Request* req);

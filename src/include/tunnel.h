@@ -15,6 +15,11 @@ typedef struct {
   bool transm;
   bool active;
   time_t t;
+  char* sn;
+  bool* ir;
+  bool* ib;
+  bool* nr;
+  int* fc;
 } LocalData;
 
 typedef struct {

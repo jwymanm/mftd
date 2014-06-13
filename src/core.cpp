@@ -57,13 +57,22 @@ void logMesg(char* mesg, int level) {
   }
 }
 
-void showError(DWORD enumber) {
+void showError(char* sname, DWORD errn) {
   LPTSTR lpMsgBuf;
   FormatMessage(
     FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-    NULL, enumber, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // Default language
+    NULL, (DWORD) errn, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // Default language
     (LPTSTR)&lpMsgBuf, 0, NULL);
+  if (!sname)
+    sprintf(lb.log, "%s", lpMsgBuf);
+  else
+    sprintf(lb.log, "%s %s", sname, lpMsgBuf);
   logMesg(lpMsgBuf, LOG_NOTICE);
+}
+
+void showSockError(char* sname, DWORD errn) {
+  LM(LOG_NOTICE, "%s socket error %u", sname, errn);
+  showError(sname, errn);
 }
 
 void startupMesg() {
@@ -96,6 +105,7 @@ void __cdecl logThread(void* arg) {
   char buff[_MAX_PATH + 1];
   strftime(buff, sizeof(buff), path.lfn, ttm);
 
+  // TODO: max # logs
   if (strcmp(lfn, buff)) {
     if (lfn[0]) {
       FILE* f = fopen(lfn, "at");
@@ -139,23 +149,18 @@ namespace core {
 void startThreads() {
 #if MONITOR
   monitor::start();
-  Sleep(1000);
 #endif
 #if FDNS
   fdns::start();
-  Sleep(1000);
 #endif
 #if TUNNEL
   tunnel::start();
-  Sleep(1000);
 #endif
 #if DHCP
   dhcp::start();
-  Sleep(1000);
 #endif
 #if HTTP
   http::start();
-  Sleep(1000);
 #endif
 }
 
@@ -288,7 +293,7 @@ void installService() {
       printf("Successfully installed %s as a service\n", SERVICE_NAME);
       //StartService(service, 0, NULL);
       CloseServiceHandle(service);
-    } else { showError(GetLastError()); }
+    } else { showError(NULL, GetLastError()); }
     CloseServiceHandle(serviceControlManager);
   }
 }
@@ -300,7 +305,7 @@ void uninstallService() {
     if (service) {
       if (stopService(service)) {
         if (DeleteService(service)) printf("Successfully removed %s from services\n", SERVICE_NAME);
-        else showError(GetLastError());
+        else showError(NULL, GetLastError());
       } else printf("Failed to stop service %s\n", SERVICE_NAME);
       CloseServiceHandle(service);
     } else printf("Service %s not found\n", SERVICE_NAME);
@@ -334,7 +339,7 @@ int main(int argc, char* argv[]) {
       strcpy(gd.ipath, gd.cpath);
       strcat(gd.ipath, "\\" NAME ".ini");
       if (ini_parse(gd.ipath, ini_handler, &config) < 0) {
-        printf("%s can not load configuration file: '" NAME ".ini' in . or %s\r\n", gd.cpath);
+        printf("%s can not load configuration file: '" NAME ".ini' in . or %s\r\n", NAME, gd.cpath);
         exit(1);
       } else {
         sprintf(gd.lpath, "%s\\" LOGDIR, gd.dpath);

@@ -4,6 +4,16 @@
 #define HTTP_ISLINGER 1
 #define HTTP_LOFFT    12
 
+#define HTTP_SPHEAD(x) \
+  http::Data* h = http::initDP(ld.sn, arg, x); \
+  if (!h) return false; \
+  char* fp = h->res.dp; \
+  char* maxData = h->res.dp + h->res.memSize; \
+  fp += sprintf(fp, "<h3>%s</h3>\n", ld.sn);
+#define HTTP_SPFOOT \
+  h->res.bytes = fp - h->res.dp; \
+  return true;
+
 namespace http {
 
 typedef struct {
@@ -29,8 +39,10 @@ typedef struct {
 } Request;
 
 typedef struct {
-  char htmlTitle[256];
   char htmlStart[256];
+  char htmlHead[5000];
+  char htmlTitle[256];
+  char htmlStyle[4096];
   char bodyStart[256];
   char td200[256];
   char bodyEnd[256];
@@ -51,6 +63,14 @@ typedef struct {
 } LocalBuffers;
 
 typedef struct {
+  char* sn;
+  bool* ir;
+  bool* ib;
+  bool* nr;
+  int* fc;
+} LocalData;
+
+typedef struct {
   ConnType httpConn;
   MYDWORD httpClients[8];
   SOCKET maxFD;
@@ -61,11 +81,12 @@ typedef struct {
 void cleanup(int et);
 void stop();
 void start();
-Data* initDP(const char* name, void* arg, int memSize);
+bool buildSP(void* arg);
+Data* initDP(const char* sname, void* arg, int memSize);
 void buildHP(Data* h);
 void procHTTP(Data* h);
 void sendHTTP(void* arg);
-void __cdecl init(void *arg);
+void __cdecl init(void* arg);
 void* main(void* arg);
 
 }
