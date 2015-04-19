@@ -76,8 +76,8 @@ ip = 192.168.200.1
 ;
 ; Tunnel
 ;
-; Leakage analysis local/remote server address/port settings
-; Points to where you will be tunneling port traffic (local)/lport) to (remote/rport)
+; Local/remote server address/port settings
+; Points to where you will be tunneling port traffic (local/lport) to (remote/rport)
 
 [Tunnel]
 host = localhost
