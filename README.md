@@ -12,10 +12,10 @@ The entire program is less than 1 megabyte in size and includes built in service
 Release
 -------
 
-  *New*
+*new*
 
-   v0.3 release is now available. The binary is located at https://github.com/jwymanm/mftd/releases/download/v0.3/mftd.exe Put this in a folder called bin under the source tree and create tmp and log directories along side it. The ini should stay in etc/
-
+   v0.4 release is now available. The binary is located at https://github.com/jwymanm/mftd/releases/download/v0.4/mftd.exe Put this in a folder called bin under the install tree and create tmp and log directories along side the bin folder. The ini should stay in etc/
+   Installer is coming soon
 
 Use
 ---
