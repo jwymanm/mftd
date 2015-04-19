@@ -14,3 +14,4 @@ MYWORD myTokenize(char* target, char* src, const char* sep, bool whiteSep);
 char* myGetToken(char* buff, MYBYTE index);
 char* myTrim(char* target, char* src);
 void mySplit(char* name, char* val, const char* src, char splitChar);
+size_t getline(char** lineptr, size_t* n, FILE* stream);

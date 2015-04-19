@@ -4,12 +4,13 @@
 #if MONITOR
 
 #include "core.h"
+#include "util.h"
 #include "net.h"
 #include "monitor.h"
 
 namespace monitor {
 
-DWORD getMacAddress(unsigned char *mac , const char *ip) {
+DWORD getDevMacAddress(unsigned char* mac , const char* ip) {
 
   //  IPAddr srcip = inet;
   ULONG macAddr[2];

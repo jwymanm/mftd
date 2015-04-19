@@ -140,7 +140,7 @@ MYWORD myTokenize(char* target, char* src, const char* sep, bool whiteSep) {
 char* myTrim(char* target, char* src) {
   while ((*src) && (*src) <= NBSP) src++;
   int i = 0;
-  for (; i < MAXCFGSIZE+1 && src[i]; i++) target[i] = src[i];
+  for (; i < MAX_CFGSIZE+1 && src[i]; i++) target[i] = src[i];
   target[i] = src[i];
   i--;
   for (; i >= 0 && target[i] <= NBSP; i--) target[i] = 0;
@@ -149,7 +149,44 @@ char* myTrim(char* target, char* src) {
 
 void mySplit(char* name, char* val, const char* src, char splitChar) {
   int i = 0, j = 0, k = 0;
-  for (; src[i] && j <= MAXCFGSIZE && src[i] != splitChar; i++, j++) name[j] = src[i];
-  if (src[i]) { i++; for (; k <= MAXCFGSIZE && src[i]; i++, k++) val[k] = src[i]; }
+  for (; src[i] && j <= MAX_CFGSIZE && src[i] != splitChar; i++, j++) name[j] = src[i];
+  if (src[i]) { i++; for (; k <= MAX_CFGSIZE && src[i]; i++, k++) val[k] = src[i]; }
   name[j] = 0; val[k] = 0; myTrim(name, name); myTrim(val, val);
+}
+
+size_t getline(char** lineptr, size_t* n, FILE* stream) {
+    char* bufptr = NULL;
+    char* p = bufptr;
+    size_t size;
+    int c;
+
+    if (lineptr == NULL) { return -1; }
+    if (stream == NULL) { return -1; }
+    if (n == NULL) { return -1; }
+
+    bufptr = * lineptr;
+    size = * n;
+
+    c = fgetc(stream);
+    if (c == EOF) { return -1; }
+    if (bufptr == NULL) {
+    	bufptr = (char*) malloc(128);
+    	if (bufptr == NULL) { return -1; }
+    	size = 128;
+    }
+    p = bufptr;
+    while(c != EOF) {
+    	if ((p - bufptr) > (size - 1)) {
+    		size = size + 128;
+    		bufptr = (char*) realloc(bufptr, size);
+    		if (bufptr == NULL) { return -1; }
+    	}
+    	*p++ = c;
+    	if (c == '\n') { break; }
+    	c = fgetc(stream);
+    }
+    *p++ = '\0';
+    *lineptr = bufptr;
+    *n = size;
+    return p - bufptr - 1;
 }

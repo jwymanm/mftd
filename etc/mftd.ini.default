@@ -33,17 +33,23 @@ LogLevel = None
 ;
 ; Network Adapter Section
 ;
-; Name is the device name found in the interface's property view, not the connection name
-; Set ip to dhcp to automatically obtain ip, ip for static
-; bindonly will use only the ip set here to bind network services to with exception of http
-; which still defaults to localhost
+; You can set the adapter description using desc = or descf =
+; It is important to use the device description and not the connection name
+; You can find the device name in properties view of the network interface next to the Configure button
+; desc = use to set the adapter description directly from here
+; descf = use to set the adapter description from a file containing a list of adapter device descriptions
+; set = used as an index into the file pointed to by names either directly when a number or using a file when a string
+; Set mode to dhcp to automatically obtain ip, dhcp+ for dhcp + temporary static, and static for permanent static
+; For dhcp+ or static modes add the ip you want using ip =
+; bindonly will use only the ip set here to bind network services to with exception of http which still defaults to localhost
 
 [Adapter]
-;name = D-Link DUB-E100 USB 2.0 Fast Ethernet Adapter
-;ip = dhcp
-;mask = 255.255.255.0
-name = Intel(R) 82579LM Gigabit Network Connection
+;desc = LAN9500 USB 2.0 to Ethernet 10/100 Adapter
+descf = adapters.txt
+set = setadapter.txt
+mode = static
 ip = 192.168.200.1
+mask = 255.255.255.0
 bindonly = 1
 
 ;
@@ -71,7 +77,7 @@ ip = 192.168.200.1
 ; Tunnel
 ;
 ; Leakage analysis local/remote server address/port settings
-; Points to the trilithic leakage server's host/port
+; Points to where you will be tunneling port traffic (local)/lport) to (remote/rport)
 
 [Tunnel]
 host = localhost
@@ -88,9 +94,9 @@ rport = 80
 
 
 ; DHCP Range
-; Give off just one ip since we are only communicating with an mca
+; Controls how many IPs (and their range) that will be handed off
 [RANGE_SET]
-DHCPRange=192.168.200.2-192.168.200.2
+DHCPRange=192.168.200.2-192.168.200.200
 SubNetMask=255.255.255.0
 DomainServer=192.168.200.1
 ; Renew time 5 minutes

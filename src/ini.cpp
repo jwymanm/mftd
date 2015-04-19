@@ -21,14 +21,20 @@ int ini_handler(void* cfg, const char* section, const char* name, const char* va
   } else if (MATCH("Logging", "LogLevel")) {
     if (!strcasecmp(value, "None")) pconfig->logging = LOG_NONE;
     else pconfig->logging = atoi(value);
-  } else if (MATCH("Adapter", "name")) {
-    pconfig->ifname = strdup(value);
+  } else if (MATCH("Adapter", "desc")) {
+    pconfig->adptrdesc = strdup(value);
+  } else if (MATCH("Adapter", "descf")) {
+    pconfig->adptrdescf = strdup(value);
+  } else if (MATCH("Adapter", "set")) {
+    pconfig->adptrset = strdup(value);
+  } else if (MATCH("Adapter", "mode")) {
+    pconfig->adptrmode = strdup(value);
   } else if (MATCH("Adapter", "ip")) {
     pconfig->adptrip = strdup(value);
   } else if (MATCH("Adapter", "mask")) {
-    pconfig->netmask = strdup(value);
+    pconfig->adptrnm = strdup(value);
   } else if (MATCH("Adapter", "bindonly")) {
-    pconfig->bindonly = atoi(value);
+    pconfig->adptrbo = atoi(value);
   } else if (MATCH("Monitor", "ip")) {
     pconfig->monip = strdup(value);
   } else if (MATCH("Monitor", "url")) {
@@ -56,49 +62,41 @@ int ini_handler(void* cfg, const char* section, const char* name, const char* va
 }
 
 /* Strip whitespace chars off end of given string, in place. Return s. */
-static char* rstrip(char* s)
-{
-    char* p = s + strlen(s);
-    while (p > s && isspace((unsigned char)(*--p)))
-        *p = '\0';
-    return s;
+static char* rstrip(char* s) {
+  char* p = s + strlen(s);
+  while (p > s && isspace((unsigned char)(*--p))) *p = '\0';
+  return s;
 }
 
 /* Return pointer to first non-whitespace char in given string. */
-static char* lskip(const char* s)
-{
-    while (*s && isspace((unsigned char)(*s)))
-        s++;
-    return (char*)s;
+static char* lskip(const char* s) {
+  while (*s && isspace((unsigned char)(*s))) s++;
+  return (char*)s;
 }
 
 /* Return pointer to first char c or ';' comment in given string, or pointer to
    null at end of string if neither found. ';' must be prefixed by a whitespace
    character to register as a comment. */
-static char* find_char_or_comment(const char* s, char c)
-{
-    int was_whitespace = 0;
-    while (*s && *s != c && !(was_whitespace && *s == ';')) {
-        was_whitespace = isspace((unsigned char)(*s));
-        s++;
-    }
-    return (char*)s;
+static char* find_char_or_comment(const char* s, char c) {
+  int was_whitespace = 0;
+  while (*s && *s != c && !(was_whitespace && *s == ';')) {
+    was_whitespace = isspace((unsigned char)(*s));
+    s++;
+  }
+  return (char*)s;
 }
 
 /* Version of strncpy that ensures dest (size bytes) is null-terminated. */
-static char* strncpy0(char* dest, const char* src, size_t size)
-{
-    strncpy(dest, src, size);
-    dest[size - 1] = '\0';
-    return dest;
+static char* strncpy0(char* dest, const char* src, size_t size) {
+  strncpy(dest, src, size);
+  dest[size-1] = '\0';
+  return dest;
 }
 
 /* See documentation in header file. */
 int ini_parse_file(FILE* file,
                    int (*handler)(void*, const char*, const char*,
-                                  const char*),
-                   void* user)
-{
+                                  const char*), void* user) {
     /* Uses a fair bit of stack (use heap instead if you need to) */
 #if INI_USE_STACK
     char line[INI_MAX_LINE];

@@ -2,7 +2,6 @@
 #define __INI_H__
 
 #define MAX_SECTION 50
-#define MAX_NAME 50
 
 /* Make this header file easier to include in C++ code */
 #ifdef __cplusplus
@@ -61,7 +60,7 @@ int ini_parse_file(FILE* file,
 
 /* Maximum line length for any line in INI file. */
 #ifndef INI_MAX_LINE
-#define INI_MAX_LINE 200
+#define INI_MAX_LINE 500
 #endif
 
 #ifdef __cplusplus

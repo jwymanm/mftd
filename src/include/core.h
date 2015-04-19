@@ -1,5 +1,7 @@
 // core.h
 
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -7,20 +9,28 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <string.h>
-#include <winsock2.h>
 #include <time.h>
-#include <tchar.h>
-#include <ws2tcpip.h>
 #include <limits.h>
-#include <iphlpapi.h>
-#include <process.h>
 #include <math.h>
 #include <signal.h>
-#include <windows.h>
 #include <pthread.h>
+
+// Windows
+#include <winsock2.h>
+#include <windows.h>
+#include <ws2tcpip.h>
+#include <wtsapi32.h>
+#include <iphlpapi.h>
 #include <shlwapi.h>
+#include <dsgetdc.h>
+#include <process.h>
+#include <psapi.h>
+#include <tchar.h>
+#include <sddl.h>
+#include <lm.h>
 
 #include <iostream>
+#include <fstream>
 #include <string>
 #include <map>
 
@@ -36,9 +46,9 @@
 #define MAX_NATURAL_ALIGNMENT sizeof(DWORD)
 #endif
 
-#define MAXCFGSIZE 510
-
+#define MAX_NAME 256
 #define MAX_SERVERS 125
+#define MAX_CFGSIZE 510
 
 #define MALLOC(x) HeapAlloc(GetProcessHeap(), 0, (x))
 #define FREE(x) HeapFree(GetProcessHeap(), 0, (x))
@@ -113,23 +123,40 @@ typedef struct {
 } GPaths;
 
 typedef struct {
+
+// services
   bool monitor;
   bool fdns;
   bool tunnel;
   bool dhcp;
   bool http;
+
+// logging
   int logging;
-  const char* ifname;
+
+// adapter
+  const char* adptrdesc;
+  const char* adptrdescf;
+  const char* adptrset;
+  const char* adptrmode;
   const char* adptrip;
-  const char* netmask;
-  bool bindonly;
+  const char* adptrnm;
+  bool adptrbo;
+
+// monitor
   const char* monip;
   const char* monurl;
   const char* moncfgurl;
+
+// fdns
   const char* fdnsip;
+
+// tunnel
   const char* host;
   int rport;
   int lport;
+
+// http
   const char* httpaddr;
   const char* httpclient;
   const char* htmltitle;
@@ -139,8 +166,7 @@ typedef struct {
   bool verbose;
   bool service;
   bool exit;
-  bool adptr;
-  bool adptrdhcp;
+  bool adapter;
 } GSetting;
 
 extern "C" GData gd;

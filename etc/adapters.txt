@@ -1,0 +1,3 @@
+LAN9500 USB 2.0 to Ethernet 10/100 Adapter
+Intel(R) 82579LM Gigabit Network Connection
+D-Link DUB-E100 USB 2.0 Fast Ethernet Adapter

@@ -4,12 +4,41 @@
 
 #define WORKING_BUFFER_SIZE 15000
 #define MAX_TRIES 3
+#define PROCESSMATCH "explorer.exe"
 
 namespace monitor {
 
 typedef struct {
-  int macfound;
+  char name[MAX_NAME];
+  wchar_t wname[MAX_NAME];
+  char fname[MAX_NAME];
+  wchar_t wfname[MAX_NAME];
+  char email[MAX_NAME];
+  char sid[MAX_NAME];
+} User;
+
+typedef struct {
+  char domain[MAX_NAME];
+  wchar_t wdomain[MAX_NAME*2];
+  char hostname[MAX_NAME];
+} Computer;
+
+typedef struct {
+  char desc[MAX_NAME];
+  bool found;
+} Adapter;
+
+typedef struct {
   BYTE mac[6];
+  char ip[50];
+  bool found;
+} Device;
+
+typedef struct {
+  User user;
+  Computer comp;
+  Adapter adptr;
+  Device dev;
 } Monitor;
 
 typedef struct {
@@ -25,12 +54,10 @@ typedef struct {
 } LocalData;
 
 extern "C" Monitor mon;
-//extern "C" LocalBuffers lb;
-//extern "C" LocalData ld;
 
 // net.cpp
 
-DWORD getMacAddress(unsigned char* mac, const char* ip);
+DWORD getDevMacAddress(unsigned char* mac, const char* ip);
 
 // main.cpp
 void cleanup(int et);

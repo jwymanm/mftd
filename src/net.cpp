@@ -185,17 +185,17 @@ bool getAdapterData()  {
 
     while (pCA) {
 
-      if (wcscmp(adptr.desc, pCA->Description) != 0) { pCA = pCA->Next; continue; }
+      if (wcscmp(adptr.wdesc, pCA->Description) != 0) { pCA = pCA->Next; continue; }
 
       adptr.exist = true;
       adptr.idx4 = pCA->IfIndex;
       adptr.idx6 = pCA->Ipv6IfIndex;
       strcpy(adptr.name, pCA->AdapterName);
-      wcscpy(adptr.wfname, pCA->FriendlyName);
-      wpcopy(adptr.fname, adptr.wfname);
+      wcscpy(adptr.wcname, pCA->FriendlyName);
+      wpcopy(adptr.cname, adptr.wcname);
       // look for our ip address
       pUnicast = pCA->FirstUnicastAddress;
-      if (!gs.adptrdhcp && pUnicast != NULL) {
+      if (adptr.mode != ADAPTER_MODE_DHCP && pUnicast != NULL) {
         for (i = 0; pUnicast != NULL; i++) {
           WSAAddressToStringA(pUnicast->Address.lpSockaddr, pUnicast->Address.iSockaddrLength, NULL, ipstr, &size);
           // TODO add netmask matcher also...
@@ -224,22 +224,25 @@ bool getAdapterData()  {
 
 int setAdptrIP() {
 
-  ULONG NTEContext = 0;
-  ULONG NTEInstance = 0;
-
   char* sysstr = (char*) calloc(2, MAX_ADAPTER_NAME_LENGTH + 4);
 
-  if (!gs.adptrdhcp) {
-    sprintf(sysstr, "netsh interface ip set address \"%s\" static %s %s", adptr.fname, config.adptrip, config.netmask);
+  if (adptr.mode == ADAPTER_MODE_DHCP) {
+    sprintf (sysstr, "netsh interface ip set address \"%s\" dhcp", adptr.cname);
     system(sysstr);
-    //possibly fallback to just adding ip if above fails
-    //AddIPAddress(inet_addr(config.adptrip), inet_addr(config.netmask), adptr.idx4, &NTEContext, &NTEInstance);
-    //sprintf(lb.log, "Net: Added IP %s to adapter", config.adptrip);
-    LM(LOG_INFO, "adapter IP statically set to: %s mask %s", config.adptrip, config.netmask);
+    logMesg("adapter configured to use dhcp only", LOG_INFO);
+  } else if (adptr.mode == ADAPTER_MODE_DHCPPLUS) {
+    ULONG NTEContext = 0;
+    ULONG NTEInstance = 0;
+    sprintf (sysstr, "netsh interface ip set address \"%s\" dhcp", adptr.cname);
+    system(sysstr);
+    AddIPAddress(inet_addr(config.adptrip), inet_addr(config.adptrip), adptr.idx4, &NTEContext, &NTEInstance);
+    LM(LOG_INFO, "adapter set to dhcp with temporary IP %s mask %s", config.adptrip, config.adptrnm);
+  } else if (adptr.mode == ADAPTER_MODE_STATIC) {
+    sprintf(sysstr, "netsh interface ip set address \"%s\" static %s %s", adptr.cname, config.adptrip, config.adptrnm);
+    system(sysstr);
+    LM(LOG_INFO, "adapter IP statically set to: %s mask %s", config.adptrip, config.adptrnm);
   } else {
-    sprintf (sysstr, "netsh interface ip set address \"%s\" dhcp", adptr.fname);
-    system(sysstr);
-    logMesg("adapter configured to use dhcp", LOG_INFO);
+    logMesg("adapter mode not set", LOG_INFO);
   }
   free (sysstr);
 }
@@ -308,7 +311,7 @@ void setServerIFs() {
 
   bool adapterData = false;
 
-  if (gs.adptr && getAdapterData()) {
+  if (adptr.set && getAdapterData()) {
     if (!adptr.ipset) {
       setAdptrIP(); Sleep(2000);
     }
@@ -317,16 +320,24 @@ void setServerIFs() {
 
   getServerIFs();
 
-  if (gs.adptr && config.bindonly) {
+  // TODO
+  // possibly don't bail if bindonly is set and continue.. have a flag to do so in config?
+  // like failbo or something
+
+  if (adptr.set && adptr.mode != ADAPTER_MODE_DHCP && config.adptrbo) {
     if (adapterData) {
-      LM(LOG_INFO, "bindonly set, using adapter interface ip only")
+      LM(LOG_INFO, "bindonly set, attempting to use adapter interface ip only")
       net.listenServers[0] = inet_addr(config.adptrip);
-      net.listenMasks[0] = inet_addr(config.netmask);
-      return;
-    } else
-      LM(LOG_INFO, "bindonly set but adapter interface is not available, ignoring")
+      net.listenMasks[0] = inet_addr(config.adptrnm);
+    } else {
+      LM(LOG_NOTICE, "bindonly set but adapter interface is not available, bailing static interface selection")
+    }
+    return;
+  } else {
+    if (adptr.set && adptr.mode == ADAPTER_MODE_DHCP && config.adptrbo) {
+      LM(LOG_NOTICE, "bindonly set but adapter is set to dhcp, ignoring bindonly")
+    }
   }
-  // TODO fix to make this more logical
 
   if (net.staticServers[0]) {
     LM(LOG_INFO, "using static interface ip address(es): ")
@@ -336,20 +347,23 @@ void setServerIFs() {
       LM(LOG_INFO, "  %s", IP2String(lb.tmp, net.staticServers[i]));
       net.listenServers[i] = net.staticServers[i];
       net.listenMasks[i] = net.staticServers[i];
-      if (gs.adptr && net.staticServers[i] == inet_addr(config.adptrip)) nomatch = false;
+      if (adptr.set && adptr.mode == ADAPTER_MODE_STATIC &&
+          net.staticServers[i] == inet_addr(config.adptrip)) nomatch = false;
     }
-    if (gs.adptr && nomatch) {
-      LM(LOG_NOTICE, "no match for adapter ip under static interfaces and bindonly not set")
+    if (adptr.set && adptr.mode == ADAPTER_MODE_STATIC && nomatch) {
+      LM(LOG_NOTICE, "no match for adapter ip under static interfaces")
     }
   } else {
-    if (gs.adptr) {
+    if (adptr.set && adptr.mode != ADAPTER_MODE_DHCP) {
       LM(LOG_NOTICE, "no static interfaces found, falling back to adapter ip")
-      if (!gs.adptrdhcp) {
-        net.listenServers[0] = inet_addr(config.adptrip);
-        net.listenMasks[0] = inet_addr(config.netmask);
-      }
+      net.listenServers[0] = inet_addr(config.adptrip);
+      net.listenMasks[0] = inet_addr(config.adptrnm);
     } else {
-      LM(LOG_NOTICE, "no static interfaces found and no adapter ip")
+      if (adptr.set) {
+        LM(LOG_NOTICE, "no static interfaces found and adapter is set to dhcp");
+      } else {
+        LM(LOG_NOTICE, "no static interfaces found and no adapter is configured");
+      }
     }
   }
 
@@ -401,7 +415,7 @@ bool dCWait(int idx) {
     Sleep(eventWait);
     net.ready[idx] = false;
     while (net.busy[idx]) Sleep(1000);
-    if (!config.bindonly || (gs.adptr && config.bindonly && getAdapterData()))
+    if (!config.adptrbo || (adptr.set && config.adptrbo && getAdapterData()))
       return true;
     net.failureCounts[idx] = 0;
   }
@@ -471,51 +485,131 @@ bool detectChange() {
     return false;
   }
 
-  setServerIFs();
-
   getHostName(net.hostname);
-
+  adapterInit();
+  setServerIFs();
   return true;
+}
+
+void adapterCleanup() {
+  free (adptr.wcname);
+  free (adptr.cname);
+  free (adptr.name);
+  free (adptr.wdesc);
+  free (adptr.desc);
+}
+
+void adapterInit() {
+
+  int line, useLine;
+  char buff[_MAX_PATH+1], * buffp;
+  size_t bytes, nbytes;
+  FILE* f,* f2;
+
+  if (config.adptrdesc || config.adptrdescf) {
+
+    if (!adptr.desc) {
+      adptr.desc = (PCHAR) calloc(1, MAX_ADAPTER_NAME_LENGTH + 4);
+      adptr.wdesc = (LPWSTR) calloc(sizeof(wchar_t), (MAX_ADAPTER_DESCRIPTION_LENGTH + 4));
+      adptr.name = (PCHAR) calloc(1, MAX_ADAPTER_NAME_LENGTH + 4);
+      adptr.cname = (PCHAR) calloc(1, MAX_ADAPTER_NAME_LENGTH + 4);
+      adptr.wcname = (PWCHAR) calloc(sizeof(wchar_t), (MAX_ADAPTER_NAME_LENGTH + 4));
+    } else {
+      *adptr.desc = 0; *adptr.wdesc = 0; *adptr.name = 0;
+      *adptr.cname = 0; *adptr.wcname = 0;
+    }
+
+    // TODO if using files just check timestamp instead of reloading
+
+    if (!config.adptrdesc) {
+
+      sprintf(buff, "%s\\%s", path.cfg, config.adptrdescf);
+      f = fopen(buff, "r");
+      if (f) {
+        if (config.adptrset) {
+          if (!isdigit(config.adptrset[0])) {
+            sprintf (buff, "%s\\%s", path.cfg, config.adptrset);
+            f2 = fopen(buff, "r");
+            if (f2) {
+              nbytes = ADAPTER_SETFILE_MAXLEN;
+              buffp = (char*) calloc(1, nbytes);
+              if (buffp) {
+                bytes = getline(&buffp, &nbytes, f2);
+                if (bytes == -1) {
+                  LM(LOG_NOTICE, "getline error file %s, using first adapter", buff);
+                  useLine = 0;
+                } else {
+                  if (isdigit(buffp[0])) {
+                    useLine = atoi(buffp);
+                    if (useLine) useLine--;
+                  } else {
+                    LM(LOG_NOTICE, "adapter set file %s invalid contents, using first adapter", buff);
+                    useLine = 0;
+                  }
+                }
+                free(buffp);
+              } else useLine = 0;
+              fclose(f2);
+            } else {
+              LM(LOG_NOTICE, "could not load adapter set file %s, using first adapter", config.adptrset);
+              useLine = 0;
+            }
+          } else useLine = atoi(config.adptrset);
+        } else useLine = 0;
+        nbytes = MAX_ADAPTER_DESCRIPTION_LENGTH;
+        buffp = adptr.desc;
+        for (line=0; line <= useLine; line++) {
+          bytes = getline(&buffp, &nbytes, f);
+          if (bytes == -1) break;
+        }
+        if (adptr.desc[strlen(adptr.desc)-1] == '\n') adptr.desc[strlen(adptr.desc)-1] = 0;
+        if (bytes == -1) {
+          LM(LOG_NOTICE, "could not read line %d of adapter description file %s\\%s", useLine+1, path.cfg, config.adptrdescf);
+          LM(LOG_NOTICE, "using last read line %d: %s", line, adptr.desc);
+        }
+        fclose(f);
+      } else {
+        LM(LOG_NOTICE, "could not load adapter description file %s, no adapter configured", buff);
+        adptr.set = false;
+        return;
+      }
+    } else sprintf(adptr.desc, "%s", config.adptrdesc);
+
+    int ifdesclen = MultiByteToWideChar(CP_ACP, 0, adptr.desc, -1, adptr.wdesc, 0);
+    if (ifdesclen > 0)
+      MultiByteToWideChar(CP_ACP, 0, adptr.desc, -1, adptr.wdesc, ifdesclen);
+
+    if (!strcasecmp(config.adptrmode, "static"))
+      adptr.mode = ADAPTER_MODE_STATIC;
+    else if (!strcasecmp(config.adptrmode, "dhcp"))
+      adptr.mode = ADAPTER_MODE_DHCP;
+    else if (!strcasecmp(config.adptrmode, "dhcp+"))
+      adptr.mode = ADAPTER_MODE_DHCPPLUS;
+
+    if (adptr.mode != ADAPTER_MODE_DHCP) {
+      if (!config.adptrip) config.adptrip = ADAPTER_DEFAULT_IP;
+      if (!config.adptrnm) config.adptrnm = ADAPTER_DEFAULT_NETMASK;
+    }
+
+    adptr.set = true;
+    LM(LOG_INFO, "using adapter with description %s", adptr.desc);
+  } else {
+    LM(LOG_INFO, "no adapter configured");
+    adptr.set = false;
+  }
+
+  return;
 }
 
 int netExit() {
   WSACleanup();
-  free (adptr.wfname);
-  free (adptr.fname);
-  free (adptr.name);
-  free (adptr.desc);
+  adapterCleanup();
 }
 
 int netInit() {
 
   getHostName(net.hostname);
   LM(LOG_NOTICE, "hostname %s", net.hostname)
-
-  if (config.ifname && config.adptrip) {
-
-    adptr.desc = (LPWSTR) calloc(sizeof(wchar_t), (MAX_ADAPTER_DESCRIPTION_LENGTH + 4));
-    adptr.name = (PCHAR) calloc(1, MAX_ADAPTER_NAME_LENGTH + 4);
-    adptr.fname = (PCHAR) calloc(1, MAX_ADAPTER_NAME_LENGTH + 4);
-    adptr.wfname = (PWCHAR) calloc(sizeof(wchar_t), (MAX_ADAPTER_NAME_LENGTH + 4));
-
-    int ifdesclen = MultiByteToWideChar(CP_ACP, 0, config.ifname, -1, adptr.desc, 0);
-    if (ifdesclen > 0)
-      MultiByteToWideChar(CP_ACP, 0, config.ifname, -1, adptr.desc, ifdesclen);
-
-    gs.adptr = true;
-
-    if (!strcasecmp(config.adptrip, "dhcp"))
-      gs.adptrdhcp = true;
-    else
-      if (!config.netmask) config.netmask = "255.255.255.0";
-
-  } else {
-    // no adapter configured so we don't want to run monitor
-    if (config.monitor) {
-      LM(LOG_NOTICE, "monitor disabled due to adapter configuration missing")
-      config.monitor = false;
-    }
-  }
 
   MYWORD wVersionReq = MAKEWORD(1,1);
   WSAStartup(wVersionReq, &net.wsa);
@@ -525,7 +619,7 @@ int netInit() {
     showError(NULL, GetLastError());
   }
 
+  adapterInit();
   setServerIFs();
-
   return 0;
 }

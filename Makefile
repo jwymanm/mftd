@@ -46,15 +46,15 @@ VPATH    = $(SRCDIR):$(BUILDDIR)
 # Build tool settings
 #
 
-# Note: if you want to use mingw instead of mingw-w64 I believe adding -D_WIN32_WINNT=0x0501 to CFLAGS makes it build
+# Note: if you want to use mingw instead of mingw-w64 adding -D_WIN32_WINNT=0x0501 to DFLAGS should make it build
 
 # 32-bit
-CC = i686-w64-mingw32-g++
-LD = i686-w64-mingw32-g++
+#CC = i686-w64-mingw32-g++
+#LD = i686-w64-mingw32-g++
 
 # 64-bit
-#CC = x86_64-w64-mingw32-g++
-#LD = x86_64-w64-mingw32-g++
+CC = x86_64-w64-mingw32-g++
+LD = x86_64-w64-mingw32-g++
 
 RM       = /bin/rm -f
 MKDIR    = mkdir -p
@@ -69,8 +69,9 @@ STRIP    = strip
 
 WFLAGS  = -Wno-write-strings
 IFLAGS  = -I$(SRCDIR)/include
-CFLAGS  = -DNAME=\""$(NAME)"\" -DSERVICE_NAME=\"$(SERVICE_NAME)\" -DSERVICE_DISPLAY_NAME=\"$(SERVICE_DISPLAY_NAME)\" -DMONITOR=$(MONITOR) -DFDNS=$(FDNS) -DTUNNEL=$(TUNNEL) -DDHCP=$(DHCP) -DHTTP=$(HTTP) -DCFGDIR=\"$(CFGDIR)\" -DLOGDIR=\"$(LOGDIR)\" -DTMPDIR=\"$(TMPDIR)\" $(WFLAGS) $(IFLAGS)
-LDFLAGS = -static -lwsock32 -liphlpapi -lws2_32 -lpthread -lshlwapi
+DFLAGS  = -DPSAPI_VERSION=1 #-D_WIN32_WINNT=0x0501
+CFLAGS  = -DNAME=\""$(NAME)"\" -DSERVICE_NAME=\"$(SERVICE_NAME)\" -DSERVICE_DISPLAY_NAME=\"$(SERVICE_DISPLAY_NAME)\" -DMONITOR=$(MONITOR) -DFDNS=$(FDNS) -DTUNNEL=$(TUNNEL) -DDHCP=$(DHCP) -DHTTP=$(HTTP) -DCFGDIR=\"$(CFGDIR)\" -DLOGDIR=\"$(LOGDIR)\" -DTMPDIR=\"$(TMPDIR)\" $(WFLAGS) $(IFLAGS) $(DFLAGS)
+LDFLAGS = -static -lwsock32 -liphlpapi -lws2_32 -lpthread -lshlwapi -lpsapi -lnetapi32
 OBJS    = core.o util.o net.o ini.o
 
 ifeq ($(MONITOR),1)
@@ -115,7 +116,7 @@ install: compile
 	$(INSTALL) -d $(BINDIR)
 	$(INSTALL) -d $(LOGDIR)
 	$(INSTALL) -m 0755 $(NAMES) $(BINDIR)
-	#$(STRIP) $(BINDIR)/$(NAME)
+	$(STRIP) $(BINDIR)/$(NAME)
 
 uninstall:
 	-$(RM) $(BINDIR)/$(NAME)

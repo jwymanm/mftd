@@ -3,3 +3,4 @@ log/*
 tmp/*.htm
 tmp/*.state
 tmp/build/*
+etc/mftd.ini

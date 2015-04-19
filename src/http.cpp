@@ -112,6 +112,10 @@ void buildHP(Data* h) {
   rB += sprintf(rB, h->html.htmlStart);
   rB += sprintf(rB, h->html.htmlHead, h->html.htmlTitle, h->html.htmlStyle);
   rB += sprintf(rB, h->html.bodyStart, gd.displayName);
+  if (gs.service)
+    rB += sprintf(rB, "<p>Running in service mode</p>");
+  else
+    rB += sprintf(rB, "<p>Running in instance mode</p>");
   rB += sprintf(rB, "\n<h2>SERVICES RUNNING</h2>\n<h3>");
 
 #if MONITOR
@@ -258,7 +262,7 @@ void procHTTP(Data* h) {
 
   if (nd.httpClients[0] && !findServer(nd.httpClients, 8, h->req.remote.sin_addr.s_addr)) {
     LSM(LOG_INFO, "client %s, access denied", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr))
-    h->res.dp = resp.send403;
+    h->res.dp = strdup(resp.send403);
     h->res.memSize = sizeof(resp.send403);
     h->res.bytes = strlen(resp.send403);
     _beginthread(sendHTTP, 0, (void*)h);
@@ -275,6 +279,7 @@ void procHTTP(Data* h) {
       fp = myGetToken(lb.http, 1);
   }
 
+  // TODO: api page for local apps to pull status from
   if (fp && !strcasecmp(fp, "/")) {
     buildHP(h);
     _beginthread(sendHTTP, 0, (void*)h);
@@ -284,7 +289,7 @@ void procHTTP(Data* h) {
     } else {
       LSM(LOG_INFO, "client %s, invalid request", IP2String(lb.tmp, h->req.remote.sin_addr.s_addr))
     }
-    h->res.dp = resp.send404;
+    h->res.dp = strdup(resp.send404);
     h->res.bytes = strlen(resp.send404);
     h->res.memSize = sizeof(resp.send404);
     _beginthread(sendHTTP, 0, (void*)h);
@@ -295,7 +300,7 @@ void procHTTP(Data* h) {
 void __cdecl init(void* arg) {
 
   FILE* f;
-  char name[MAXCFGSIZE+2], value[MAXCFGSIZE+2];
+  char name[MAX_CFGSIZE+2], value[MAX_CFGSIZE+2];
   bool bindfailed;
 
   sprintf(lb.htm, "%s\\" NAME ".htm", path.tmp);
@@ -426,7 +431,7 @@ void* main(void* arg) {
             h->req.sock = accept(nd.httpConn.sock, (sockaddr*)&h->req.remote, &h->req.sockLen);
             if (h->req.sock == INVALID_SOCKET) {
               free(h);
-              if (!*ld.nr) break;
+              if (!*ld.nr) continue;
               LSM(LOG_NOTICE, "accept failed, error %u", WSAGetLastError());
             } else procHTTP(h);
           } else logMesg("HTTP memory error", LOG_NOTICE);
